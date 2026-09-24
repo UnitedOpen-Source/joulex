@@ -817,3 +817,38 @@ fn iteration_env_var_forwarded() {
         .stdout(predicate::str::contains("run-0"));
 }
 
+#[test]
+fn runs_with_parameter_file() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, "foo\nbar").unwrap();
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--parameter-file")
+        .arg("testvar")
+        .arg(temp.path())
+        .arg("--show-output")
+        .arg("echo val-{testvar}")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("val-foo"))
+        .stdout(predicate::str::contains("val-bar"));
+}
+
+#[test]
+fn fails_with_missing_parameter_file() {
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--parameter-file")
+        .arg("testvar")
+        .arg("non_existent_file_12345.txt")
+        .arg("echo {testvar}")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Could not read parameter file"));
+}
+
+

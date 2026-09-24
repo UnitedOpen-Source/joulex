@@ -203,6 +203,21 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("parameter-file")
+                .long("parameter-file")
+                .short('F')
+                .action(ArgAction::Append)
+                .value_names(["VAR", "FILE"])
+                .conflicts_with_all(["parameter-scan", "parameter-step-size"])
+                .help(
+                    "Perform benchmark runs for each line in FILE. \
+                     Replaces the string '{VAR}' in each command by the current parameter value.\n\n\
+                     Example:  joulex -F url urls.txt 'curl {url}'\n\n\
+                     The option can be specified multiple times and combined with --parameter-list \
+                     to run benchmarks for all possible parameter combinations.\n"
+                ),
+        )
+        .arg(
             Arg::new("shell")
                 .long("shell")
                 .short('S')

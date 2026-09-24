@@ -152,19 +152,43 @@ impl<'a> Commands<'a> {
                 args,
                 step_size,
             )?))
-        } else if let Some(args) = matches.get_many::<String>("parameter-list") {
+        } else if matches.get_many::<String>("parameter-list").is_some()
+            || matches.get_many::<String>("parameter-file").is_some()
+        {
             let command_names = command_names.map_or(vec![], |names| {
                 names.map(|v| v.as_str()).collect::<Vec<_>>()
             });
-            let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
-            let param_names_and_values: Vec<(&str, Vec<String>)> = args
-                .chunks_exact(2)
-                .map(|pair| {
+
+            let mut param_names_and_values: Vec<(&str, Vec<String>)> = Vec::new();
+
+            if let Some(args) = matches.get_many::<String>("parameter-list") {
+                let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
+                for pair in args.chunks_exact(2) {
                     let name = pair[0];
                     let list_str = pair[1];
-                    (name, tokenize(list_str))
-                })
-                .collect();
+                    param_names_and_values.push((name, tokenize(list_str)));
+                }
+            }
+
+            if let Some(args) = matches.get_many::<String>("parameter-file") {
+                let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
+                for pair in args.chunks_exact(2) {
+                    let name = pair[0];
+                    let file_path = pair[1];
+                    let content = std::fs::read_to_string(file_path)
+                        .with_context(|| format!("Could not read parameter file '{file_path}'"))?;
+                    let lines: Vec<String> = content
+                        .lines()
+                        .map(|l| l.trim_end_matches('\r').to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                    if lines.is_empty() {
+                        bail!("Parameter file '{file_path}' contains no values");
+                    }
+                    param_names_and_values.push((name, lines));
+                }
+            }
+
             {
                 let duplicates =
                     Self::find_duplicates(param_names_and_values.iter().map(|(name, _)| *name));
@@ -595,3 +619,51 @@ fn test_different_command_name_count_with_parameters() {
         ParameterScanError::UnexpectedCommandNameCount(2, 3)
     ));
 }
+
+#[test]
+fn test_parameter_file_support() {
+    use crate::cli::get_cli_arguments;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, "foo\r\nbar\n\nbaz\n").unwrap();
+    let temp_path = temp.path().to_str().unwrap().to_string();
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-F",
+        "item",
+        &temp_path,
+        "echo {item}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap();
+    assert_eq!(commands.iter().count(), 3);
+    let names: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(names, vec!["echo foo", "echo bar", "echo baz"]);
+}
+
+#[test]
+fn test_parameter_file_and_list_combined() {
+    use crate::cli::get_cli_arguments;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, "1\n2").unwrap();
+    let temp_path = temp.path().to_str().unwrap().to_string();
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-F",
+        "num",
+        &temp_path,
+        "-L",
+        "letter",
+        "a,b",
+        "echo {num}-{letter}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap();
+    assert_eq!(commands.iter().count(), 4);
+}
+
