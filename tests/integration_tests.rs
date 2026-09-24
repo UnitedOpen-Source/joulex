@@ -1609,3 +1609,25 @@ fn round_robin_allows_unparametrized_setup() {
         .assert()
         .success();
 }
+
+#[test]
+fn fish_completions_complete_executables_for_the_command() {
+    hyperfine()
+        .arg("--generate-completions")
+        .arg("fish")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"",
+        ));
+}
+
+#[test]
+fn non_fish_completions_do_not_contain_fish_snippet() {
+    hyperfine()
+        .arg("--generate-completions")
+        .arg("bash")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("__fish_complete_command").not());
+}

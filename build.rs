@@ -20,6 +20,11 @@ fn main() {
         Shell::PowerShell,
         Shell::Elvish,
     ] {
-        generate_to(shell, &mut command, "joulex", &outdir).unwrap();
+        let path = generate_to(shell, &mut command, "joulex", &outdir).unwrap();
+        if shell == Shell::Fish {
+            let mut script = fs::read_to_string(&path).unwrap();
+            script.push_str(FISH_COMMAND_COMPLETION);
+            fs::write(&path, script).unwrap();
+        }
     }
 }
