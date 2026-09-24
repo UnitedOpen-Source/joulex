@@ -1631,3 +1631,69 @@ fn non_fish_completions_do_not_contain_fish_snippet() {
         .success()
         .stdout(predicate::str::contains("__fish_complete_command").not());
 }
+
+#[test]
+fn existing_export_is_kept_when_benchmark_fails() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("previous.json");
+    std::fs::write(&export_path, "previous results").unwrap();
+
+    hyperfine_debug()
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("--prepare=exit 1")
+        .arg("sleep 0.1")
+        .assert()
+        .failure();
+
+    assert_eq!(
+        std::fs::read_to_string(&export_path).unwrap(),
+        "previous results"
+    );
+}
+
+#[test]
+fn export_to_missing_directory_fails_before_benchmarking() {
+    hyperfine_debug()
+        .arg("--export-json")
+        .arg("/nonexistent-joulex-dir/out.json")
+        .arg("sleep 0.1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Could not create export file '/nonexistent-joulex-dir/out.json'",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn export_replaces_symlink_instead_of_writing_through_it() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let victim = tempdir.path().join("victim.txt");
+    std::fs::write(&victim, "do not overwrite").unwrap();
+    let link = tempdir.path().join("results.json");
+    std::os::unix::fs::symlink(&victim, &link).unwrap();
+
+    hyperfine_debug()
+        .arg("--export-json")
+        .arg(&link)
+        .arg("sleep 0.1")
+        .assert()
+        .success();
+
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap(),
+        "do not overwrite"
+    );
+    let metadata = std::fs::symlink_metadata(&link).unwrap();
+    assert!(metadata.file_type().is_file());
+    assert!(std::fs::read_to_string(&link)
+        .unwrap()
+        .contains("\"results\""));
+    // no temporary files are left behind
+    assert_eq!(std::fs::read_dir(tempdir.path()).unwrap().count(), 2);
+}
