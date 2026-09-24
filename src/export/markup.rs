@@ -44,9 +44,8 @@ pub trait MarkupExporter {
         for entry in entries {
             let measurement = &entry.result;
             // prepare data row strings
-            let cmd_str = measurement
-                .command_with_unused_parameters
-                .replace('|', "\\|");
+            // Each exporter escapes the command for its own markup in `command()`.
+            let cmd_str = measurement.command_with_unused_parameters.as_str();
             let mean_str = format_duration_value(measurement.mean, Some(unit)).0;
             let stddev_str = if let Some(stddev) = measurement.stddev {
                 format!(" ± {}", format_duration_value(stddev, Some(unit)).0)
@@ -74,7 +73,7 @@ pub trait MarkupExporter {
 
             // prepare table row entries
             table.push_str(&self.table_row(&[
-                &self.command(&cmd_str),
+                &self.command(cmd_str),
                 &format!("{mean_str}{stddev_str}"),
                 &min_str,
                 &max_str,
@@ -100,7 +99,10 @@ pub trait MarkupExporter {
         "".to_string()
     }
 
-    fn command(&self, size: &str) -> String;
+    /// Render a (possibly untrusted) command string as an inline-code table cell.
+    /// Implementations must make sure the text cannot close the code span or the
+    /// table cell (see #25).
+    fn command(&self, cmd: &str) -> String;
 }
 
 fn determine_unit_from_results(results: &[BenchmarkResult]) -> Unit {
