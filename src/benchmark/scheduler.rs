@@ -388,7 +388,7 @@ impl<'a> Scheduler<'a> {
                                     }
                                     Ordering::Equal => format!("as fast as {ref_cmd}"),
                                 };
-                                format!("  {}", desc)
+                                format!("  {desc}")
                             }
                         } else {
                             String::new()
