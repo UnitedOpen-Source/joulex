@@ -679,7 +679,7 @@ impl<'a> BenchmarkRunner<'a> {
                 > 0,
         };
 
-        if !self.options.suppress_outlier_warnings {
+        if !self.options.suppress_off_cpu_warnings {
             let total_cpu = user_mean + system_mean;
             if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
                 let ratio = if total_cpu > 0.0 {
@@ -689,7 +689,9 @@ impl<'a> BenchmarkRunner<'a> {
                 };
                 warnings.push(Warnings::OffCpuTime(t_mean, total_cpu, ratio));
             }
+        }
 
+        if !self.options.suppress_outlier_warnings {
             if scores[0] > OUTLIER_THRESHOLD {
                 warnings.push(Warnings::SlowInitialRun(
                     self.times_real[0],

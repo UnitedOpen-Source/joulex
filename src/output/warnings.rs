@@ -78,7 +78,8 @@ impl fmt::Display for Warnings {
                     f,
                     "Substantial off-CPU time detected: the process spent most of its wall-clock time \
                      waiting (I/O, sleep, locks, or system scheduling) rather than executing on-CPU \
-                     (wall: {wall_str}, CPU: {cpu_str}, ratio: {ratio_str}).",
+                     (wall: {wall_str}, CPU: {cpu_str}, ratio: {ratio_str}). \
+                     This is normal for I/O-bound commands, but indicates external latency is included in measurements.",
                     wall_str = format_duration(wall, None),
                     cpu_str = format_duration(cpu, None),
                     ratio_str = ratio_str,

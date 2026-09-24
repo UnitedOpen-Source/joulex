@@ -117,7 +117,10 @@ joulex \- command\-line benchmarking tool with energy and deep stats
 .IR NAME ]
 .RB [ \-\-filter\-failed ]
 .RB [ \-\-omit\-failed\-runs ]
+.RB [ \-\-no\-off\-cpu\-warning ]
 .RB [ \-\-suppress\-outlier\-warnings ]
+.RB [ \-\-suppress\-warnings
+.IR KIND... ]
 .RI [ COMMAND... ]
 .SH DESCRIPTION
 A command\-line benchmarking tool which includes:
@@ -244,9 +247,17 @@ Ignore non-zero exit codes of benchmarked programs.
 .IP
 Exclude runs with non-zero exit codes from summary statistics and percentiles (requires \fB\-i\fR/\fB\-\-ignore\-failure\fR).
 .HP
+\fB\-\-no\-off\-cpu\-warning\fR
+.IP
+Suppress off-CPU time warnings (for I/O- or sleep-bound commands).
+.HP
 \fB\-\-suppress\-outlier\-warnings\fR
 .IP
 Suppress statistical outlier detection warnings.
+.HP
+\fB\-\-suppress\-warnings\fR \fIKIND,...\fP
+.IP
+Suppress specific warning types ('off-cpu', 'outliers', 'all').
 .HP
 \fB\-l\fR, \fB\-\-style\fR \fITYPE\fP
 .IP
