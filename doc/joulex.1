@@ -67,9 +67,15 @@ joulex \- command\-line benchmarking tool with energy and deep stats
 .IR VALUES ]
 .RB [ \-S
 .IR SHELL ]
-.RB [ \-\-style
+.RB [ \-l
+.IR TYPE
+.RB |
+.IR \-\-style
 .IR TYPE ]
-.RB [ \-\-sort
+.RB [ \-t
+.IR METHOD
+.RB |
+.IR \-\-sort
 .IR METHOD ]
 .RB [ \-u
 .IR UNIT
@@ -91,10 +97,18 @@ joulex \- command\-line benchmarking tool with energy and deep stats
 .IR FILE ]
 .RB [ \-\-export\-orgmode
 .IR FILE ]
-.RB [ \-\-show\-output ]
-.RB [ \-\-output
+.RB [ \-d
+.RB |
+.IR \-\-show\-output ]
+.RB [ \-O
+.IR WHERE
+.RB |
+.IR \-\-output
 .IR WHERE ]
-.RB [ \-\-input
+.RB [ \-I
+.IR WHERE
+.RB |
+.IR \-\-input
 .IR WHERE ]
 .RB [ \-n
 .IR NAME
@@ -234,11 +248,11 @@ Exclude runs with non-zero exit codes from summary statistics and percentiles (r
 .IP
 Suppress statistical outlier detection warnings.
 .HP
-\fB\-\-style\fR \fITYPE\fP
+\fB\-l\fR, \fB\-\-style\fR \fITYPE\fP
 .IP
 Set output style: auto, basic, full, nocolor, color, none.
 .HP
-\fB\-\-sort\fR \fIMETHOD\fP
+\fB\-t\fR, \fB\-\-sort\fR \fIMETHOD\fP
 .IP
 Sort order: auto, command, mean\-time.
 .HP
@@ -270,15 +284,15 @@ Export summary statistics as a Markdown table.
 .IP
 Export summary statistics as an Emacs Org-mode table.
 .HP
-\fB\-\-show\-output\fR
+\fB\-d\fR, \fB\-\-show\-output\fR
 .IP
 Print the stdout and stderr of benchmarked commands.
 .HP
-\fB\-\-output\fR \fIWHERE\fP
+\fB\-O\fR, \fB\-\-output\fR \fIWHERE\fP
 .IP
 Redirect command output: null (default), pipe, inherit, or <FILE>.
 .HP
-\fB\-\-input\fR \fIWHERE\fP
+\fB\-I\fR, \fB\-\-input\fR \fIWHERE\fP
 .IP
 Feed input to benchmarked commands: null (default) or <FILE>.
 .HP

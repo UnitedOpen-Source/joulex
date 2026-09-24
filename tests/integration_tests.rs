@@ -1188,3 +1188,52 @@ fn omit_failed_runs_json_export() {
     let times = result["times"].as_array().unwrap();
     assert_eq!(times.len(), 3); // 5 runs - 2 failed = 3 kept
 }
+
+#[test]
+fn test_short_flags_style_and_sort() {
+    hyperfine()
+        .arg("-r=2")
+        .arg("-l")
+        .arg("basic")
+        .arg("-t")
+        .arg("command")
+        .arg("echo a")
+        .arg("echo b")
+        .assert()
+        .success();
+}
+
+#[test]
+fn test_short_flag_show_output() {
+    hyperfine()
+        .arg("-r=2")
+        .arg("-d")
+        .arg("echo output_marker_123")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("output_marker_123"));
+}
+
+#[test]
+fn test_short_flag_output_and_input() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let input_path = tempdir.path().join("input.txt");
+    let output_path = tempdir.path().join("output.txt");
+
+    std::fs::write(&input_path, "hello short flags\n").unwrap();
+
+    hyperfine()
+        .arg("-r=2")
+        .arg("-I")
+        .arg(&input_path)
+        .arg("-O")
+        .arg(&output_path)
+        .arg("cat")
+        .assert()
+        .success();
+
+    let output_content = std::fs::read_to_string(&output_path).unwrap();
+    assert!(output_content.contains("hello short flags"));
+}

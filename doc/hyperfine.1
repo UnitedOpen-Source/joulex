@@ -31,9 +31,15 @@ hyperfine \- command\-line benchmarking tool
 .IR VALUES ]
 .RB [ \-\-shell
 .IR SHELL ]
-.RB [ \-\-style
+.RB [ \-l
+.IR TYPE
+.RB |
+.IR \-\-style
 .IR TYPE ]
-.RB [ \-\-sort
+.RB [ \-t
+.IR METHOD
+.RB |
+.IR \-\-sort
 .IR METHOD ]
 .RB [ \-\-time\-unit
 .IR UNIT ]
@@ -47,9 +53,18 @@ hyperfine \- command\-line benchmarking tool
 .IR FILE ]
 .RB [ \-\-export\-orgmode
 .IR FILE ]
-.RB [ \-\-output
+.RB [ \-d
+.RB |
+.IR \-\-show\-output ]
+.RB [ \-O
+.IR WHERE
+.RB |
+.IR \-\-output
 .IR WHERE ]
-.RB [ \-\-input
+.RB [ \-I
+.IR WHERE
+.RB |
+.IR \-\-input
 .IR WHERE ]
 .RB [ \-\-command\-name
 .IR NAME ]
@@ -211,7 +226,7 @@ An alias for '\-\-shell=none'.
 .IP
 Ignore non\-zero exit codes of the benchmarked programs.
 .HP
-\fB\-\-style\fR \fITYPE\fP
+\fB\-l\fR, \fB\-\-style\fR \fITYPE\fP
 .IP
 Set output style \fITYPE\fP (default: auto). Set this to 'basic' to disable output
 coloring and interactive elements. Set it to 'full' to enable all effects even
@@ -220,7 +235,7 @@ interactive output without any colors. Set this to 'color' to keep the colors
 without any interactive output. Set this to 'none' to disable all the output
 of the tool.
 .HP
-\fB\-\-sort\fR \fIMETHOD\fP
+\fB\-t\fR, \fB\-\-sort\fR \fIMETHOD\fP
 .IP
 Specify the sort order of the speed comparison summary and the
 exported tables for markup formats (Markdown, AsciiDoc, org\-mode):
@@ -267,13 +282,13 @@ The output time unit can be changed using the \fB\-\-time\-unit\fR option.
 Export the timing summary statistics as an Emacs org\-mode table to the
 given \fIFILE\fP. The output time unit can be changed using the \fB\-\-time\-unit\fR option.
 .HP
-\fB\-\-show\-output\fR
+\fB\-d\fR, \fB\-\-show\-output\fR
 .IP
 Print the stdout and stderr of the benchmark instead of suppressing it. This
 will increase the time it takes for benchmarks to run, so it should only be
 used for debugging purposes or when trying to benchmark output speed.
 .HP
-\fB\-\-output\fR \fIWHERE\fP
+\fB\-O\fR, \fB\-\-output\fR \fIWHERE\fP
 .IP
 Control where the output of the benchmark is redirected. Note that
 some programs like 'grep' detect when standard output is \fI\,/dev/null\/\fP and
@@ -297,7 +312,7 @@ once for each command. Note: If you want to log the output of each and
 every iteration, you can use a shell redirection and the $HYPERFINE_ITERATION
 environment variable: 'my-command > output-${HYPERFINE_ITERATION}.log'
 .HP
-\fB\-\-input\fR \fIWHERE\fP
+\fB\-I\fR, \fB\-\-input\fR \fIWHERE\fP
 .IP
 Control where the input of the benchmark comes from.
 .IP
