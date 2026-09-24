@@ -9,7 +9,11 @@ A multi-dimensional command-line benchmarking tool with **Performance per Watt (
 ## Key Features
 
 * **⚡ Performance per Watt & Energy Benchmarking (`-E`, `--energy`)**: Hardware RAPL microjoule counters (Linux sysfs powercap) to measure energy consumption in Joules (mean ± σ) and average active Power in Watts.
-* **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, bringing academic-level precision to CLI profiling.
+* **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, plus two-sample hypothesis testing ($p$-value significance) against reference commands.
+* **🧠 Peak Memory Usage Display**: Real-time process peak memory (RSS) formatted in `B`, `KB`, `MB`, `GB` and displayed in terminal output.
+* **🛡️ Hardened Robustness & Security**: Protection against CSV formula injection (CWE-1236), safe integer range iteration avoiding overflows near `i32::MAX`, and input validation preventing zero-run crashes.
+* **🔄 Environment Iteration Forwarding**: `$JOULEX_ITERATION` and `$HYPERFINE_ITERATION` forwarded to `--prepare` and `--conclude` commands.
+* **⚙️ Modern CLI & Completions**: Unified `-e, --export <FILE>` auto-detecting formats by file extension, `--filter-failed` for parameter scans, and built-in `--generate-completions <SHELL>`.
 * **Statistical analysis across multiple runs**: Mean, median, stddev, min, max, user, and kernel CPU time.
 * **Support for arbitrary shell commands**: Raw or custom shells.
 * **Outlier detection**: Modified Z-score outlier detection to identify caching or interference.
@@ -22,22 +26,22 @@ A multi-dimensional command-line benchmarking tool with **Performance per Watt (
 
 ### Basic benchmarks
 
-To run a benchmark, you can simply call `hyperfine <command>...`. The argument(s) can be any
+To run a benchmark, you can simply call `joulex <command>...` (or `hyperfine <command>...`). The argument(s) can be any
 shell command. For example:
 ```sh
-hyperfine 'sleep 0.3'
+joulex 'sleep 0.3'
 ```
 
-Hyperfine will automatically determine the number of runs to perform for each command. By default,
+Joulex will automatically determine the number of runs to perform for each command. By default,
 it will perform *at least* 10 benchmarking runs and measure for at least 3 seconds. To change this,
 you can use the `-r`/`--runs` option:
 ```sh
-hyperfine --runs 5 'sleep 0.3'
+joulex --runs 5 'sleep 0.3'
 ```
 
 If you want to compare the runtimes of different programs, you can pass multiple commands:
 ```sh
-hyperfine 'hexdump file' 'xxd file'
+joulex 'hexdump file' 'xxd file'
 ```
 
 ### Warmup runs and preparation commands
