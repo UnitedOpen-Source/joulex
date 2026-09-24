@@ -44,6 +44,13 @@ If you want to compare the runtimes of different programs, you can pass multiple
 joulex 'hexdump file' 'xxd file'
 ```
 
+### Understanding the output
+
+What do *mean ± σ*, *User/System*, *CPU %*, *Peak Memory*, the energy line and the
+relative-speed summary mean exactly, and how do you get stable numbers? See
+[doc/understanding-output.md](doc/understanding-output.md). It also covers
+benchmarking across git branches and a checklist for reducing noise.
+
 ### Warmup runs and preparation commands
 
 For programs that perform a lot of disk I/O, the benchmarking results can be heavily influenced
