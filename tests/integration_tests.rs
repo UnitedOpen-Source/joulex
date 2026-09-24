@@ -950,6 +950,31 @@ fn suppresses_outlier_warnings_flag() {
         .stderr(predicate::str::contains("initial run was unusually slow").not());
 }
 
+#[test]
+fn export_csv_with_reference_and_parameter_scan() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.csv");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--shell=none")
+        .arg("--reference=sleep 0.01")
+        .arg("--parameter-list")
+        .arg("secs")
+        .arg("0.01,0.02")
+        .arg("--export-csv")
+        .arg(&export_path)
+        .arg("sleep {secs}")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    assert!(contents.contains("command,mean,stddev,median,user,system,min,max,parameter_secs"));
+    assert!(contents.contains("sleep 0.01"));
+}
+
 
 
 
