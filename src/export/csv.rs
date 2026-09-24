@@ -1,17 +1,21 @@
 use std::borrow::Cow;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use csv::WriterBuilder;
 
 use super::Exporter;
 use crate::benchmark::benchmark_result::BenchmarkResult;
+use crate::benchmark::relative_speed;
 use crate::options::SortOrder;
 use crate::util::units::Unit;
 
 use anyhow::Result;
 
 #[derive(Default)]
-pub struct CsvExporter {}
+pub struct CsvExporter {
+    /// `--label KEY=VALUE` pairs, exported as `label_KEY` columns
+    pub labels: BTreeMap<String, String>,
+}
 
 /// Sanitizes a CSV field value to prevent formula injection (CWE-1236).
 ///
@@ -61,10 +65,20 @@ impl Exporter for CsvExporter {
                 headers.push(Cow::Owned(format!("parameter_{param_name}").into_bytes()));
             }
 
+            // New columns are appended at the end, so that the position of the
+            // existing columns doesn't change for consumers that read by index.
+            headers.push(Cow::Borrowed(b"relative_speed"));
+            headers.push(Cow::Borrowed(b"relative_speed_stddev"));
+            for key in self.labels.keys() {
+                headers.push(Cow::Owned(format!("label_{key}").into_bytes()));
+            }
+
             writer.write_record(headers)?;
         }
 
-        for res in results {
+        let relative = relative_speed::compute_with_check(results, SortOrder::Command);
+
+        for (i, res) in results.iter().enumerate() {
             let mut fields = vec![sanitize_csv_value(&res.command)];
             for f in &[
                 res.mean,
@@ -84,6 +98,26 @@ impl Exporter for CsvExporter {
                     .map(|s| s.as_str())
                     .unwrap_or("");
                 fields.push(sanitize_csv_value(val));
+            }
+            let entry = relative.as_ref().map(|r| &r[i]);
+            let optional = |value: Option<f64>| {
+                Cow::Owned(
+                    value
+                        .map(|v| v.to_string())
+                        .unwrap_or_default()
+                        .into_bytes(),
+                )
+            };
+            fields.push(optional(
+                entry.map(|e| e.relative_speed).filter(|r| r.is_finite()),
+            ));
+            fields.push(optional(
+                entry
+                    .filter(|e| !e.is_reference)
+                    .and_then(|e| e.relative_speed_stddev),
+            ));
+            for value in self.labels.values() {
+                fields.push(sanitize_csv_value(value));
             }
             writer.write_record(fields)?;
         }
@@ -164,9 +198,9 @@ fn test_csv() {
     .unwrap();
 
     insta::assert_snapshot!(actual, @r#"
-    command,mean,stddev,median,user,system,min,max,parameter_bar,parameter_foo
-    command_a,1,2,1,3,4,5,6,two,one
-    command_b,11,12,11,13,14,15,16.5,seven,one
+    command,mean,stddev,median,user,system,min,max,parameter_bar,parameter_foo,relative_speed,relative_speed_stddev
+    command_a,1,2,1,3,4,5,6,two,one,1,
+    command_b,11,12,11,13,14,15,16.5,seven,one,11,25.059928172283335
     "#);
 }
 
@@ -212,8 +246,8 @@ fn test_csv_formula_injection_sanitization() {
     .unwrap();
 
     insta::assert_snapshot!(actual, @r#"
-    command,mean,stddev,median,user,system,min,max,parameter_payload,parameter_safe_param
-    sleep 0.1,0.1,0,0.1,0,0,0.1,0.1,'=1+1,value
+    command,mean,stddev,median,user,system,min,max,parameter_payload,parameter_safe_param,relative_speed,relative_speed_stddev
+    sleep 0.1,0.1,0,0.1,0,0,0.1,0.1,'=1+1,value,1,
     "#);
 }
 
@@ -318,9 +352,9 @@ fn test_csv_with_reference_command() {
     .unwrap();
 
     insta::assert_snapshot!(actual, @r#"
-    command,mean,stddev,median,user,system,min,max,parameter_secs
-    ref_cmd,1,0,1,0.5,0.5,1,1,
-    param_cmd,2,0,2,1,1,2,2,2
+    command,mean,stddev,median,user,system,min,max,parameter_secs,relative_speed,relative_speed_stddev
+    ref_cmd,1,0,1,0.5,0.5,1,1,,1,
+    param_cmd,2,0,2,1,1,2,2,2,2,
     "#);
 }
 
@@ -394,8 +428,8 @@ fn test_csv_heterogeneous_parameters() {
     .unwrap();
 
     insta::assert_snapshot!(actual, @r#"
-    command,mean,stddev,median,user,system,min,max,parameter_alpha,parameter_beta
-    cmd_a,1,0,1,0.5,0.5,1,1,val1,
-    cmd_b,2,0,2,1,1,2,2,,val2
+    command,mean,stddev,median,user,system,min,max,parameter_alpha,parameter_beta,relative_speed,relative_speed_stddev
+    cmd_a,1,0,1,0.5,0.5,1,1,val1,,1,
+    cmd_b,2,0,2,1,1,2,2,,val2,2,
     "#);
 }

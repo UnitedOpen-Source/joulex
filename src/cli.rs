@@ -433,6 +433,15 @@ pub fn build_command() -> Command {
                        The output time unit is always seconds."),
         )
         .arg(
+            Arg::new("label")
+                .long("label")
+                .action(ArgAction::Append)
+                .value_name("KEY=VALUE")
+                .help("Attach a label to the JSON and CSV exports (can be given multiple times), \
+                       e.g. --label commit=$GITHUB_SHA --label runner=graviton3. Labels appear \
+                       under 'joulex.labels' in JSON and as 'label_KEY' columns in CSV."),
+        )
+        .arg(
             Arg::new("export-json")
                 .long("export-json")
                 .action(ArgAction::Set)

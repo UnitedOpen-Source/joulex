@@ -885,8 +885,16 @@ fn filter_failed_commands() {
         .success();
 
     let contents = std::fs::read_to_string(export_path).unwrap();
-    assert!(contents.contains("echo success"));
-    assert!(!contents.contains("\"false\""));
+    let json: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    // Only the results are filtered; the command line in the metadata still
+    // lists every command.
+    let commands: Vec<&str> = json["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["command"].as_str().unwrap())
+        .collect();
+    assert_eq!(commands, vec!["echo success"]);
 }
 
 #[test]

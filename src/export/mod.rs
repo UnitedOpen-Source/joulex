@@ -8,6 +8,7 @@ mod csv;
 mod json;
 mod markdown;
 mod markup;
+pub mod metadata;
 mod orgmode;
 #[cfg(test)]
 mod tests;
@@ -16,6 +17,7 @@ use self::asciidoc::AsciidocExporter;
 use self::csv::CsvExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
+use self::metadata::{parse_labels, ExportMetadata};
 use self::orgmode::OrgmodeExporter;
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
@@ -70,6 +72,8 @@ pub struct ExportManager {
     exporters: Vec<ExporterWithTarget>,
     time_unit: Option<Unit>,
     sort_order: SortOrder,
+    /// Run metadata for the JSON and CSV exports
+    metadata: ExportMetadata,
 }
 
 impl ExportManager {
@@ -80,10 +84,18 @@ impl ExportManager {
         time_unit: Option<Unit>,
         sort_order: SortOrder,
     ) -> Result<Self> {
+        let labels = parse_labels(
+            matches
+                .get_many::<String>("label")
+                .into_iter()
+                .flatten()
+                .map(String::as_str),
+        )?;
         let mut export_manager = Self {
             exporters: vec![],
             time_unit,
             sort_order,
+            metadata: ExportMetadata::new(labels),
         };
 
         if let Some(args) = matches.get_many::<String>("export") {
@@ -113,8 +125,12 @@ impl ExportManager {
     pub fn add_exporter(&mut self, export_type: ExportType, filename: &str) -> Result<()> {
         let exporter: Box<dyn Exporter> = match export_type {
             ExportType::Asciidoc => Box::<AsciidocExporter>::default(),
-            ExportType::Csv => Box::<CsvExporter>::default(),
-            ExportType::Json => Box::<JsonExporter>::default(),
+            ExportType::Csv => Box::new(CsvExporter {
+                labels: self.metadata.labels.clone(),
+            }),
+            ExportType::Json => Box::new(JsonExporter {
+                metadata: Some(self.metadata.clone()),
+            }),
             ExportType::Markdown => Box::<MarkdownExporter>::default(),
             ExportType::Orgmode => Box::<OrgmodeExporter>::default(),
         };
