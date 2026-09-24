@@ -305,21 +305,28 @@ impl<'a> Scheduler<'a> {
                             if let (Some(ref_times), Some(item_times)) =
                                 (&reference.result.times, &item.result.times)
                             {
-                                if let Some(cmp) =
-                                    crate::stats::deep::compare_samples(ref_times, item_times)
-                                {
-                                    let sig_str = if cmp.is_significant_01 {
-                                        "statistically significant (p < 0.01)".cyan()
-                                    } else if cmp.is_significant_05 {
-                                        "statistically significant (p < 0.05)".cyan()
-                                    } else {
-                                        "no statistically significant difference (p ≥ 0.05)"
-                                            .dimmed()
-                                    };
-                                    println!(
-                                        "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
-                                        cmp.t_statistic, cmp.p_value, sig_str
-                                    );
+                                match crate::stats::deep::compare_samples(ref_times, item_times) {
+                                    Some(cmp) => {
+                                        let sig_str = if cmp.is_significant_01 {
+                                            "statistically significant (p < 0.01)".cyan()
+                                        } else if cmp.is_significant_05 {
+                                            "statistically significant (p < 0.05)".cyan()
+                                        } else {
+                                            "no statistically significant difference (p ≥ 0.05)"
+                                                .dimmed()
+                                        };
+                                        println!(
+                                            "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
+                                            cmp.t_statistic, cmp.p_value, sig_str
+                                        );
+                                    }
+                                    None => {
+                                        println!(
+                                            "      {}",
+                                            "[Bootstrap t-test: not applicable (zero variance or insufficient samples)]"
+                                                .dimmed()
+                                        );
+                                    }
                                 }
                             }
                         }

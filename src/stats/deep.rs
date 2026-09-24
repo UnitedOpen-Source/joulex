@@ -56,14 +56,36 @@ pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
 
     let sample_a = Sample::new(a);
     let sample_b = Sample::new(b);
-    let nresamples = 5000;
 
     let t_stat = sample_a.t(sample_b);
+    if !t_stat.is_finite() {
+        // Zero variance in both samples:
+        // If means are equal, the samples are identical -> p = 1.0, no difference
+        let same = (sample_a.mean() - sample_b.mean()).abs()
+            <= f64::EPSILON * sample_a.mean().abs().max(1.0);
+        return if same {
+            Some(ComparisonStats {
+                p_value: 1.0,
+                t_statistic: 0.0,
+                is_significant_05: false,
+                is_significant_01: false,
+            })
+        } else {
+            // Constant but different samples without variance: t-test is undefined
+            None
+        };
+    }
+
+    let nresamples = 5000;
     let (dist,) =
         criterion_stats::univariate::mixed::bootstrap(sample_a, sample_b, nresamples, |s1, s2| {
             (s1.t(s2),)
         });
     let p_val = dist.p_value(t_stat, &Tails::Two);
+
+    if !p_val.is_finite() {
+        return None;
+    }
 
     Some(ComparisonStats {
         p_value: p_val,
@@ -93,5 +115,30 @@ mod tests {
         let cmp = compare_samples(&sample_fast, &sample_slow).unwrap();
         assert!(cmp.is_significant_05);
         assert!(cmp.is_significant_01);
+    }
+
+    #[test]
+    fn test_compare_samples_identical_constant() {
+        let sample1 = vec![1.0, 1.0, 1.0, 1.0];
+        let sample2 = vec![1.0, 1.0, 1.0, 1.0];
+        let cmp = compare_samples(&sample1, &sample2).unwrap();
+        assert_eq!(cmp.p_value, 1.0);
+        assert_eq!(cmp.t_statistic, 0.0);
+        assert!(!cmp.is_significant_05);
+        assert!(!cmp.is_significant_01);
+    }
+
+    #[test]
+    fn test_compare_samples_different_constant() {
+        let sample1 = vec![1.0, 1.0, 1.0, 1.0];
+        let sample2 = vec![2.0, 2.0, 2.0, 2.0];
+        assert!(compare_samples(&sample1, &sample2).is_none());
+    }
+
+    #[test]
+    fn test_compare_samples_insufficient() {
+        let sample1 = vec![1.0, 1.0];
+        let sample2 = vec![1.0, 1.0];
+        assert!(compare_samples(&sample1, &sample2).is_none());
     }
 }
