@@ -140,7 +140,27 @@ impl<'a> Scheduler<'a> {
                 bar.finish_and_clear();
             }
 
-            let max_count = runners.iter().map(|r| r.count).max().unwrap_or(1);
+            let common = match self.options.run_bounds {
+                crate::options::RunBounds {
+                    min,
+                    max: Some(max),
+                } if min == max => min,
+                _ => {
+                    let per_round: f64 = runners.iter().map(|r| r.initial_total_time).sum();
+                    let n = if per_round > 0.0 {
+                        (self.options.min_benchmarking_time / per_round) as u64
+                    } else {
+                        self.options.run_bounds.min
+                    };
+                    let n = n.max(self.options.run_bounds.min);
+                    self.options.run_bounds.max.map_or(n, |m| n.min(m)).max(1)
+                }
+            };
+            for r in &mut runners {
+                r.count = common;
+            }
+
+            let max_count = common;
             let total_remaining_runs: u64 = runners.iter().map(|r| r.count.saturating_sub(1)).sum();
 
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled

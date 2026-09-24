@@ -1697,3 +1697,54 @@ fn export_replaces_symlink_instead_of_writing_through_it() {
     // no temporary files are left behind
     assert_eq!(std::fs::read_dir(tempdir.path()).unwrap().count(), 2);
 }
+
+#[test]
+fn round_robin_equal_run_counts_for_asymmetric_commands() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine_debug()
+        .arg("--schedule=round-robin")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sleep 0.005")
+        .arg("sleep 0.05")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    let results = parsed["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+    let count_fast = results[0]["times"].as_array().unwrap().len();
+    let count_slow = results[1]["times"].as_array().unwrap().len();
+    assert_eq!(
+        count_fast, count_slow,
+        "Fast command runs ({count_fast}) must equal slow command runs ({count_slow}) in round-robin mode"
+    );
+}
+
+#[test]
+fn schedule_interleaved_alias_works() {
+    hyperfine_debug()
+        .arg("--schedule=interleaved")
+        .arg("-r=2")
+        .arg("sleep 0.01")
+        .arg("sleep 0.02")
+        .assert()
+        .success();
+}
+
+#[test]
+fn schedule_sequential_is_rejected() {
+    hyperfine_debug()
+        .arg("--schedule=sequential")
+        .arg("sleep 0.01")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "invalid value 'sequential' for '--schedule <MODE>'",
+        ));
+}

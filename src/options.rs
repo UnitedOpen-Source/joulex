@@ -522,9 +522,7 @@ impl Options {
             ScheduleMode::RoundRobin
         } else {
             match matches.get_one::<String>("schedule").map(|s| s.as_str()) {
-                Some("round-robin") | Some("sequential") | Some("interleaved") => {
-                    ScheduleMode::RoundRobin
-                }
+                Some("round-robin") | Some("interleaved") => ScheduleMode::RoundRobin,
                 _ => ScheduleMode::Grouped,
             }
         };
@@ -667,13 +665,17 @@ fn test_schedule_options() {
     let options = Options::from_cli_arguments(&matches).unwrap();
     assert_eq!(options.schedule, ScheduleMode::RoundRobin);
 
-    let matches_seq = crate::cli::build_command().get_matches_from(vec![
+    let matches_interleaved = crate::cli::build_command().get_matches_from(vec![
         "joulex",
-        "--schedule=sequential",
+        "--schedule=interleaved",
         "echo test",
     ]);
-    let options_seq = Options::from_cli_arguments(&matches_seq).unwrap();
-    assert_eq!(options_seq.schedule, ScheduleMode::RoundRobin);
+    let options_interleaved = Options::from_cli_arguments(&matches_interleaved).unwrap();
+    assert_eq!(options_interleaved.schedule, ScheduleMode::RoundRobin);
+
+    assert!(crate::cli::build_command()
+        .try_get_matches_from(vec!["joulex", "--schedule=sequential", "echo test"])
+        .is_err());
 
     let matches_flag =
         crate::cli::build_command().get_matches_from(vec!["joulex", "--round-robin", "echo test"]);
