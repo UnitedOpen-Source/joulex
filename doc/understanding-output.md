@@ -15,9 +15,10 @@ reliable results. See the [README](../README.md) for installation and basic usag
 ```
 $ joulex -N -w 2 -r 20 --deep-stats 'sleep 0.05' 'sleep 0.1'
 Benchmark 1: sleep 0.05
-  Time (mean ± σ):      58.4 ms ±   1.7 ms    [User: 1.2 ms, System: 1.4 ms, CPU: 4%, Peak Memory: 1.0 MB]
-  Range (min … max):    55.8 ms …  63.2 ms    20 runs
-  Bootstrap 95% CI:   [mean: 0.0578s … 0.0592s, median: 0.0577s … 0.0592s]
+  Time (mean ± σ):      58.1 ms ±   2.0 ms    [User: 1.2 ms, System: 1.5 ms, CPU: 5%, Peak Memory: 1.0 MB]
+  Range (min … median … max):    55.0 ms …  57.8 ms …  62.0 ms    20 runs
+  Bootstrap 95% CI:   [mean: 57.2 ms … 59.0 ms, median: 56.8 ms … 59.6 ms, σ: 1.5 ms … 2.4 ms]
+  Percentiles:        [p05: 55.4 ms, p25: 56.4 ms, p75: 59.7 ms, p95: 61.2 ms (IQR 3.3 ms), geometric mean: 58.1 ms]
 ```
 
 | Field | Meaning |
@@ -26,9 +27,10 @@ Benchmark 1: sleep 0.05
 | `Time (abs ≡)` | Shown instead of mean ± σ when only a single run was performed. |
 | `User` / `System` | Mean CPU time per run spent in user mode and in the kernel, **summed over the process and all of its children**. They are CPU-time components and don't need to add up to the wall time (see below). |
 | `CPU` | `(User + System) / mean wall time`. Above 100% means the command used several cores in parallel (e.g. 380% ≈ 3.8 cores busy); well below 100% means the command mostly waited (I/O, sleep, locks, network). |
-| `Peak Memory` | Maximum resident set size (RSS) reported by the operating system, as a human-readable size. *Known limitation on Unix: the value is currently the maximum over all child processes joulex has run so far, not per run (#46).* |
-| `Range (min … max)` | Fastest and slowest timed run, and the number of runs. Warmup runs are not counted. |
-| `Bootstrap 95% CI` | Only with `--deep-stats`: 95% confidence intervals for the **mean** and the **median**, computed by bootstrapping (5,000 resamples). If you repeated the whole benchmark many times, about 95% of such intervals would contain the true value. Values are printed in seconds (#107). |
+| `Peak Memory` | Largest maximum resident set size (RSS) of a single run, as a human-readable size. On Unix it is measured per run for the benchmarked process and the processes it waited for (e.g. the command started by the shell); `--prepare`/`--setup` commands are not included. |
+| `Range (min … median … max)` | Fastest, median and slowest timed run, and the number of runs (warmup runs are not counted). The median is more robust than the mean when a few runs were disturbed. |
+| `Bootstrap 95% CI` | Only with `--deep-stats`: 95% confidence intervals for the **mean**, the **median** and **σ**, computed by bootstrapping (5,000 resamples). If you repeated the whole benchmark many times, about 95% of such intervals would contain the true value. |
+| `Percentiles` | Only with `--deep-stats`: the 5th, 25th, 75th and 95th percentile of the run times (linear interpolation), the interquartile range `IQR = p75 − p25`, and the geometric mean. p95 shows how bad the slow runs get; the IQR is a spread measure that ignores outliers. |
 | `Energy (mean)` / `Power` | Only with `-E/--energy` on Linux with readable RAPL counters: mean energy per run in joules, and average power (energy / mean time) in watts. The counters measure the **whole CPU package**, including idle and background power, not just the benchmarked process. If the counters are unavailable (other operating systems, missing permissions), joulex prints `RAPL unprivileged/unavailable on host`; on most distributions `energy_uj` is root-only since CVE-2020-8694. |
 
 ### Why can `User + System` be lower or higher than the wall time?
