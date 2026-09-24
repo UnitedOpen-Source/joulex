@@ -485,6 +485,12 @@ pub fn build_command() -> Command {
                 .value_parser(PossibleValuesParser::new(SHELLS))
                 .help("Generate a shell completions script for the given shell and print it to stdout.")
         )
+        .arg(
+            Arg::new("suppress-outlier-warnings")
+                .long("suppress-outlier-warnings")
+                .action(ArgAction::SetTrue)
+                .help("Suppress statistical outlier warnings (useful for automated scripts and CI).")
+        )
 }
 
 #[test]

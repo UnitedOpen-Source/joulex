@@ -255,6 +255,9 @@ pub struct Options {
 
     /// Whether to exclude results with non-zero exit codes from comparisons and exports
     pub filter_failed: bool,
+
+    /// Suppress statistical outlier warnings
+    pub suppress_outlier_warnings: bool,
 }
 
 impl Default for Options {
@@ -280,6 +283,7 @@ impl Default for Options {
             measure_energy: false,
             deep_stats: false,
             filter_failed: false,
+            suppress_outlier_warnings: false,
         }
     }
 }
@@ -484,6 +488,7 @@ impl Options {
         options.measure_energy = matches.get_flag("energy");
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
+        options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
 
         Ok(options)
     }
@@ -569,4 +574,19 @@ fn test_can_parse_shell_command_line_from_str() {
         Shell::parse_from_str("''").unwrap_err(),
         OptionsError::EmptyShell
     ));
+}
+
+#[test]
+fn test_suppress_outlier_warnings_option() {
+    let matches = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--suppress-outlier-warnings",
+        "echo test",
+    ]);
+    let options = Options::from_cli_arguments(&matches).unwrap();
+    assert!(options.suppress_outlier_warnings);
+
+    let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
+    let options_default = Options::from_cli_arguments(&matches_default).unwrap();
+    assert!(!options_default.suppress_outlier_warnings);
 }
