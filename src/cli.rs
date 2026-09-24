@@ -294,6 +294,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("style")
                 .long("style")
+                .short('l')
                 .action(ArgAction::Set)
                 .value_name("TYPE")
                 .value_parser(["auto", "basic", "full", "nocolor", "color", "none"])
@@ -322,6 +323,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("sort")
             .long("sort")
+            .short('t')
             .action(ArgAction::Set)
             .value_name("METHOD")
             .value_parser(["auto", "command", "mean-time"])
@@ -419,6 +421,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("show-output")
                 .long("show-output")
+                .short('d')
                 .action(ArgAction::SetTrue)
                 .conflicts_with("style")
                 .help(
@@ -431,6 +434,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("output")
                 .long("output")
+                .short('O')
                 .conflicts_with("show-output")
                 .action(ArgAction::Append)
                 .value_name("WHERE")
@@ -458,6 +462,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("input")
                 .long("input")
+                .short('I')
                 .action(ArgAction::Set)
                 .num_args(1)
                 .value_name("WHERE")
