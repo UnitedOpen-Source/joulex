@@ -51,6 +51,7 @@ pub struct BenchmarkRunner<'a> {
     pub exit_codes: Vec<Option<i32>>,
     pub all_succeeded: bool,
     pub count: u64,
+    pub initial_total_time: f64,
 }
 
 impl<'a> BenchmarkRunner<'a> {
@@ -113,6 +114,7 @@ impl<'a> BenchmarkRunner<'a> {
             exit_codes: vec![],
             all_succeeded: true,
             count: 0,
+            initial_total_time: 0.0,
         }
     }
 
@@ -238,11 +240,13 @@ impl<'a> BenchmarkRunner<'a> {
         let conclusion_overhead =
             conclusion_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
 
-        let runs_in_min_time = (self.options.min_benchmarking_time
-            / (res.time_real
-                + self.executor.time_overhead()
-                + preparation_overhead
-                + conclusion_overhead)) as u64;
+        let total_time = res.time_real
+            + self.executor.time_overhead()
+            + preparation_overhead
+            + conclusion_overhead;
+        self.initial_total_time = total_time;
+
+        let runs_in_min_time = (self.options.min_benchmarking_time / total_time) as u64;
 
         let count = {
             let min = cmp::max(runs_in_min_time, self.options.run_bounds.min);

@@ -561,9 +561,9 @@ pub fn build_command() -> Command {
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")
-                .value_parser(["grouped", "round-robin", "sequential", "interleaved"])
+                .value_parser(["grouped", "round-robin", "interleaved"])
                 .default_value("grouped")
-                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' (interleave iterations across commands).")
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' / 'interleaved' (interleave iterations across commands to mitigate temporal bias).")
         )
         .arg(
             Arg::new("round-robin")
