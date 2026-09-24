@@ -32,6 +32,11 @@ impl MarkupExporter for AsciidocExporter {
     }
 
     fn command(&self, cmd: &str) -> String {
+        // Use AsciiDoc's built-in character attributes so that the content can
+        // neither close the monospace span (`) nor start a new cell (|).
+        // `<`, `>` and `&` are already escaped by AsciiDoc's special-character
+        // substitution.
+        let cmd = cmd.replace('`', "{backtick}").replace('|', "{vbar}");
         format!("`{cmd}`")
     }
 }
@@ -64,4 +69,13 @@ fn test_asciidoc_exporter_table_header() {
     let expect = "[cols=\"<,>,>,>,>\"]\n|===";
 
     assert_eq!(expect, actual);
+}
+
+/// Commands must not be able to close the monospace span or the table cell (#25)
+#[test]
+fn test_asciidoc_command_escaping() {
+    let exporter = AsciidocExporter::default();
+
+    assert_eq!(exporter.command("sleep 1"), "`sleep 1`");
+    assert_eq!(exporter.command("x`y|z"), "`x{backtick}y{vbar}z`");
 }
