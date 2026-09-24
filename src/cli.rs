@@ -648,6 +648,21 @@ pub fn build_command() -> Command {
                 .help("Suppress statistical outlier warnings (useful for automated scripts and CI).")
         )
         .arg(
+            Arg::new("no-off-cpu-warning")
+                .long("no-off-cpu-warning")
+                .action(ArgAction::SetTrue)
+                .help("Suppress off-CPU time warnings (for I/O- or sleep-bound commands).")
+        )
+        .arg(
+            Arg::new("suppress-warnings")
+                .long("suppress-warnings")
+                .alias("no-warning")
+                .value_name("KIND")
+                .value_delimiter(',')
+                .value_parser(["off-cpu", "outliers", "all"])
+                .help("Suppress specific warning types ('off-cpu', 'outliers', 'all').")
+        )
+        .arg(
             Arg::new("schedule")
                 .long("schedule")
                 .value_name("MODE")

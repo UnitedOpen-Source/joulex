@@ -1092,12 +1092,62 @@ fn off_cpu_warning_suppressed_by_flag() {
     hyperfine()
         .arg("--runs=2")
         .arg("--shell=none")
-        .arg("--suppress-outlier-warnings")
+        .arg("--no-off-cpu-warning")
         .arg("sleep 0.12")
         .assert()
         .success()
         .stdout(predicate::str::contains("CPU:"))
         .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
+}
+
+#[test]
+fn off_cpu_warning_not_suppressed_by_outlier_flag() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("--suppress-outlier-warnings")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains(
+            "Substantial off-CPU time detected",
+        ));
+}
+
+#[test]
+fn off_cpu_warning_suppressed_by_suppress_warnings_flag() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("--suppress-warnings=off-cpu")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
+
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("--suppress-warnings=all")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
+
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("--suppress-warnings=outliers")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains(
+            "Substantial off-CPU time detected",
+        ));
 }
 
 #[test]

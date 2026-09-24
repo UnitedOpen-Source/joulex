@@ -271,6 +271,9 @@ pub struct Options {
     /// Suppress statistical outlier warnings
     pub suppress_outlier_warnings: bool,
 
+    /// Suppress off-CPU time warnings
+    pub suppress_off_cpu_warnings: bool,
+
     /// Execution schedule mode
     pub schedule: ScheduleMode,
 
@@ -315,6 +318,7 @@ impl Default for Options {
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
+            suppress_off_cpu_warnings: false,
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
             discard_outliers: None,
@@ -534,6 +538,21 @@ impl Options {
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
+        options.suppress_off_cpu_warnings = matches.get_flag("no-off-cpu-warning");
+
+        if let Some(suppress_list) = matches.get_many::<String>("suppress-warnings") {
+            for kind in suppress_list {
+                match kind.as_str() {
+                    "off-cpu" => options.suppress_off_cpu_warnings = true,
+                    "outliers" => options.suppress_outlier_warnings = true,
+                    "all" => {
+                        options.suppress_off_cpu_warnings = true;
+                        options.suppress_outlier_warnings = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
         options.affinity = matches
@@ -757,4 +776,43 @@ fn test_schedule_options() {
     let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
     let options_default = Options::from_cli_arguments(&matches_default).unwrap();
     assert_eq!(options_default.schedule, ScheduleMode::Grouped);
+}
+
+#[test]
+fn test_warning_suppression_options() {
+    let matches_no_off_cpu = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--no-off-cpu-warning",
+        "echo test",
+    ]);
+    let opts = Options::from_cli_arguments(&matches_no_off_cpu).unwrap();
+    assert!(opts.suppress_off_cpu_warnings);
+    assert!(!opts.suppress_outlier_warnings);
+
+    let matches_outliers = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--suppress-outlier-warnings",
+        "echo test",
+    ]);
+    let opts = Options::from_cli_arguments(&matches_outliers).unwrap();
+    assert!(!opts.suppress_off_cpu_warnings);
+    assert!(opts.suppress_outlier_warnings);
+
+    let matches_suppress_both = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--suppress-warnings=off-cpu,outliers",
+        "echo test",
+    ]);
+    let opts = Options::from_cli_arguments(&matches_suppress_both).unwrap();
+    assert!(opts.suppress_off_cpu_warnings);
+    assert!(opts.suppress_outlier_warnings);
+
+    let matches_suppress_all = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--no-warning=all",
+        "echo test",
+    ]);
+    let opts = Options::from_cli_arguments(&matches_suppress_all).unwrap();
+    assert!(opts.suppress_off_cpu_warnings);
+    assert!(opts.suppress_outlier_warnings);
 }
