@@ -121,8 +121,14 @@ impl<T: MarkupExporter> Exporter for T {
         sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
         let unit = unit.unwrap_or_else(|| determine_unit_from_results(results));
-        let entries = relative_speed::compute_with_check(results, sort_order)
-            .unwrap_or_else(|| relative_speed::compute_without_ratios(results, sort_order));
+        let entries = if results.is_empty() {
+            Vec::new()
+        } else {
+            let fastest = relative_speed::fastest_of(results);
+            relative_speed::compute_with_check(results, sort_order).unwrap_or_else(|| {
+                relative_speed::compute_without_ratios(results, fastest, sort_order)
+            })
+        };
 
         let table = self.table_results(&entries, unit);
         Ok(table.as_bytes().to_vec())
