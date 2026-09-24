@@ -87,6 +87,19 @@ option:
 hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'
 ```
 
+> [!WARNING]
+> Parameter values (from `-P`, `-L` and `-F/--parameter-file`) are inserted into the command
+> **verbatim**. They are not shell-escaped. With the default shell, a value such as
+> `a; rm -rf ~` or `$(curl …)` is executed as shell code. This is by design for values you
+> control, but be careful when the values come from somewhere else (file names, branch names,
+> PR titles, CI inputs, the lines of a `--parameter-file`):
+>
+> - Prefer `-N`/`--shell=none`. The command is then split into arguments without a shell,
+>   so a value can at most become extra arguments, never shell code.
+> - Or quote the placeholder in the command, e.g. `joulex -L f "$files" "wc -l '{f}'"`. This only
+>   helps if the values cannot contain a single quote themselves.
+> - Validate untrusted values (e.g. allow only `[A-Za-z0-9._/-]`) before passing them to joulex.
+
 ### Intermediate shell
 
 By default, commands are executed using a predefined shell (`/bin/sh` on Unix, `cmd.exe` on Windows).
