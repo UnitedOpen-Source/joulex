@@ -1124,3 +1124,67 @@ fn multiple_parameter_scans_with_step_size_cli_error() {
             "The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified",
         ));
 }
+
+#[test]
+fn omit_failed_runs_requires_ignore_failure() {
+    hyperfine()
+        .arg("--omit-failed-runs")
+        .arg("echo a")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("--ignore-failure"));
+}
+
+#[cfg(unix)]
+#[test]
+fn omit_failed_runs_excludes_failures_from_statistics() {
+    hyperfine()
+        .arg("--ignore-failure")
+        .arg("--omit-failed-runs")
+        .arg("--runs=5")
+        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"2\" ] || [ \"$JOULEX_ITERATION\" = \"4\" ]; then exit 1; else sleep 0.01; fi'")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("2 failed runs omitted"))
+        .stderr(predicate::str::contains(
+            "Omitted 2 of 5 benchmark runs with non-zero exit codes",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
+fn omit_failed_runs_all_failed_errors() {
+    hyperfine()
+        .arg("--ignore-failure")
+        .arg("--omit-failed-runs")
+        .arg("--runs=3")
+        .arg("false")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("All benchmark runs failed"));
+}
+
+#[cfg(unix)]
+#[test]
+fn omit_failed_runs_json_export() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("--ignore-failure")
+        .arg("--omit-failed-runs")
+        .arg("--runs=5")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"1\" ] || [ \"$JOULEX_ITERATION\" = \"3\" ]; then exit 1; else sleep 0.01; fi'")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    let result = &parsed["results"][0];
+    let times = result["times"].as_array().unwrap();
+    assert_eq!(times.len(), 3); // 5 runs - 2 failed = 3 kept
+}

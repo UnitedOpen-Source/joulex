@@ -16,6 +16,7 @@ pub enum Warnings {
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
     OffCpuTime(Second, Second, f64),
+    FailedRunsOmitted { omitted: usize, total: usize },
 }
 
 impl fmt::Display for Warnings {
@@ -81,6 +82,11 @@ impl fmt::Display for Warnings {
                     ratio_str = ratio_str,
                 )
             }
+            Warnings::FailedRunsOmitted { omitted, total } => write!(
+                f,
+                "Omitted {omitted} of {total} benchmark runs with non-zero exit codes from the \
+                 summary statistics."
+            ),
         }
     }
 }
@@ -99,5 +105,18 @@ mod tests {
         let warning_inf = Warnings::OffCpuTime(1.0, 0.0, f64::INFINITY);
         let msg_inf = format!("{warning_inf}");
         assert!(msg_inf.contains("∞"));
+    }
+
+    #[test]
+    fn test_failed_runs_omitted_warning_format() {
+        let warning = Warnings::FailedRunsOmitted {
+            omitted: 3,
+            total: 10,
+        };
+        let msg = format!("{warning}");
+        assert_eq!(
+            msg,
+            "Omitted 3 of 10 benchmark runs with non-zero exit codes from the summary statistics."
+        );
     }
 }

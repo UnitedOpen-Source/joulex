@@ -23,7 +23,7 @@ use crate::util::units::{format_bytes, Second};
 use benchmark_result::BenchmarkResult;
 use timing_result::TimingResult;
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use colored::*;
 use statistical::{mean, median, standard_deviation};
 
@@ -303,7 +303,53 @@ impl<'a> BenchmarkRunner<'a> {
         Ok(())
     }
 
-    pub fn finish(self, print_header: bool) -> Result<BenchmarkResult> {
+    pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+        let original_run_count = self.times_real.len();
+        let mut num_omitted_failed_runs = 0;
+
+        if self.options.omit_failed_runs {
+            let keep_indices: Vec<usize> = self
+                .exit_codes
+                .iter()
+                .enumerate()
+                .filter(|&(_, exit_code)| exit_code == &Some(0))
+                .map(|(index, _)| index)
+                .collect();
+
+            num_omitted_failed_runs = original_run_count.saturating_sub(keep_indices.len());
+
+            if keep_indices.is_empty() {
+                bail!("All benchmark runs failed. No successful runs to compute statistics from.");
+            }
+
+            if num_omitted_failed_runs > 0 {
+                self.times_real = keep_indices
+                    .iter()
+                    .map(|&index| self.times_real[index])
+                    .collect();
+                self.times_user = keep_indices
+                    .iter()
+                    .map(|&index| self.times_user[index])
+                    .collect();
+                self.times_system = keep_indices
+                    .iter()
+                    .map(|&index| self.times_system[index])
+                    .collect();
+                self.memory_usage_byte = keep_indices
+                    .iter()
+                    .map(|&index| self.memory_usage_byte[index])
+                    .collect();
+                if !self.energy_measurements.is_empty()
+                    && self.energy_measurements.len() == original_run_count
+                {
+                    self.energy_measurements = keep_indices
+                        .iter()
+                        .map(|&index| self.energy_measurements[index])
+                        .collect();
+                }
+            }
+        }
+
         let t_num = self.times_real.len();
         let t_mean = mean(&self.times_real);
         let t_stddev = if self.times_real.len() > 1 {
@@ -321,7 +367,11 @@ impl<'a> BenchmarkRunner<'a> {
         let (mean_str, time_unit) = format_duration_unit(t_mean, self.options.time_unit);
         let min_str = format_duration(t_min, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
-        let num_str = format!("{t_num} runs");
+        let num_str = if num_omitted_failed_runs > 0 {
+            format!("{t_num} runs ({num_omitted_failed_runs} failed runs omitted)")
+        } else {
+            format!("{t_num} runs")
+        };
 
         let user_str = format_duration(user_mean, Some(time_unit));
         let system_str = format_duration(system_mean, Some(time_unit));
@@ -356,15 +406,21 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if self.times_real.len() == 1 {
+                let suffix = if num_omitted_failed_runs > 0 {
+                    format!("    {}", num_str.dimmed())
+                } else {
+                    String::new()
+                };
                 println!(
-                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]",
+                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
                     "abs".green().bold(),
                     mean_str.green().bold(),
                     "        ", // alignment
                     user_str.blue(),
                     system_str.blue(),
                     cpu_str.blue(),
-                    mem_str.blue()
+                    mem_str.blue(),
+                    suffix,
                 );
             } else {
                 let stddev_str = format_duration(t_stddev.unwrap(), Some(time_unit));
@@ -454,6 +510,13 @@ impl<'a> BenchmarkRunner<'a> {
         // Check program exit codes
         if !self.all_succeeded {
             warnings.push(Warnings::NonZeroExitCode);
+        }
+
+        if num_omitted_failed_runs > 0 {
+            warnings.push(Warnings::FailedRunsOmitted {
+                omitted: num_omitted_failed_runs,
+                total: original_run_count,
+            });
         }
 
         // Run outlier detection
