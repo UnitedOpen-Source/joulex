@@ -621,10 +621,52 @@ fn shows_faster_slower_annotations_with_sort_command_and_reference() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Relative speed comparison")
+            predicate::str::contains("Relative speed comparison (reference: sleep 2.0)")
                 .and(predicate::str::contains("times faster than sleep 2.0"))
                 .and(predicate::str::contains("times slower than sleep 2.0")),
         );
+}
+
+#[test]
+fn shows_faster_slower_natural_layout_with_sort_command_and_reference() {
+    let assert = hyperfine_debug()
+        .arg("--sort=command")
+        .arg("--reference=sleep 2.0")
+        .arg("sleep 1.0")
+        .arg("sleep 3.0")
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+
+    assert!(stdout.contains("Relative speed comparison (reference: sleep 2.0)"));
+    assert!(stdout.contains("sleep 2.0  (reference)"));
+
+    let mut found_faster = false;
+    let mut found_slower = false;
+    for line in stdout.lines() {
+        if line.contains("times faster than sleep 2.0") {
+            found_faster = true;
+            assert!(line.contains("sleep 1.0"));
+            let pos_cmd = line.find("sleep 1.0").unwrap();
+            let pos_ann = line.find("times faster than").unwrap();
+            assert!(
+                pos_cmd < pos_ann,
+                "command should precede annotation in: {line}"
+            );
+        }
+        if line.contains("times slower than sleep 2.0") {
+            found_slower = true;
+            assert!(line.contains("sleep 3.0"));
+            let pos_cmd = line.find("sleep 3.0").unwrap();
+            let pos_ann = line.find("times slower than").unwrap();
+            assert!(
+                pos_cmd < pos_ann,
+                "command should precede annotation in: {line}"
+            );
+        }
+    }
+    assert!(found_faster && found_slower);
 }
 
 #[test]
