@@ -13,7 +13,7 @@ use crate::{
 
 use clap::ArgMatches;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use rust_decimal::Decimal;
 
 /// A command that should be benchmarked.
@@ -214,7 +214,31 @@ impl<'a> Commands<'a> {
                         .map(|(_, values)| values.len()),
                 )
                 .collect();
-            let param_space_size = dimensions.iter().product();
+
+            let max_benchmarks = matches
+                .get_one::<usize>("max-benchmarks")
+                .copied()
+                .unwrap_or(100_000);
+
+            let param_space_size = dimensions
+                .iter()
+                .try_fold(1usize, |acc, &len| acc.checked_mul(len))
+                .filter(|&n| n <= max_benchmarks)
+                .ok_or_else(|| {
+                    let breakdown = std::iter::once(format!("commands: {}", command_strings.len()))
+                        .chain(
+                            param_names_and_values
+                                .iter()
+                                .map(|(name, values)| format!("{name}: {}", values.len())),
+                        )
+                        .collect::<Vec<_>>()
+                        .join(" × ");
+                    anyhow!(
+                        "The parameter combinations would create more than {max_benchmarks} benchmarks \
+                         ({breakdown}). Reduce the ranges, use --parameter-step-size, or override with --max-benchmarks."
+                    )
+                })?;
+
             if param_space_size == 0 {
                 return Ok(Self(Vec::new()));
             }
@@ -773,4 +797,69 @@ fn test_single_parameter_scan_with_step_size_succeeds() {
     assert_eq!(commands.len(), 3);
     let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
     assert_eq!(lines, vec!["echo 1", "echo 3", "echo 5"]);
+}
+
+#[test]
+fn test_parameter_combinations_exceeding_default_limit_fails() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "a",
+        "1",
+        "20000",
+        "-P",
+        "b",
+        "1",
+        "20000",
+        "echo {a} {b}",
+    ]);
+    let err = Commands::from_cli_arguments(&matches).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("The parameter combinations would create more than 100000 benchmarks"));
+    assert!(msg.contains("commands: 1 × a: 20000 × b: 20000"));
+}
+
+#[test]
+fn test_parameter_combinations_max_benchmarks_override() {
+    use crate::cli::get_cli_arguments;
+
+    // 10 x 10 = 100 combinations. With --max-benchmarks 50 it should fail:
+    let matches_fail = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "a",
+        "1",
+        "10",
+        "-P",
+        "b",
+        "1",
+        "10",
+        "--max-benchmarks",
+        "50",
+        "echo {a} {b}",
+    ]);
+    let err = Commands::from_cli_arguments(&matches_fail).unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("The parameter combinations would create more than 50 benchmarks"));
+
+    // With --max-benchmarks 200 it should succeed:
+    let matches_ok = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "a",
+        "1",
+        "10",
+        "-P",
+        "b",
+        "1",
+        "10",
+        "--max-benchmarks",
+        "200",
+        "echo {a} {b}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches_ok).unwrap().0;
+    assert_eq!(commands.len(), 100);
 }

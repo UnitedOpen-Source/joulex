@@ -1443,3 +1443,24 @@ fn help_is_colored_when_colors_are_forced() {
     // bold green section headers, e.g. "Usage:" / "Arguments:"
     assert!(stdout.contains("\u{1b}[1m\u{1b}[32m") || stdout.contains("\u{1b}[1;32m"));
 }
+
+#[test]
+fn parameter_scan_cartesian_product_exceeding_limit_fails_fast() {
+    hyperfine()
+        .arg("-N")
+        .arg("-r=1")
+        .arg("-P")
+        .arg("a")
+        .arg("1")
+        .arg("20000")
+        .arg("-P")
+        .arg("b")
+        .arg("1")
+        .arg("20000")
+        .arg("echo {a} {b}")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "The parameter combinations would create more than 100000 benchmarks",
+        ));
+}
