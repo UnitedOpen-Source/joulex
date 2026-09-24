@@ -1464,3 +1464,33 @@ fn parameter_scan_cartesian_product_exceeding_limit_fails_fast() {
             "The parameter combinations would create more than 100000 benchmarks",
         ));
 }
+
+#[test]
+fn imported_command_names_cannot_inject_terminal_escape_sequences() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let import_path = tempdir.path().join("evil.json");
+    let markdown_path = tempdir.path().join("evil.md");
+    std::fs::write(
+        &import_path,
+        r#"{"results":[{"command":"\u001b]0;PWNED\u0007\u001b[2Jevil","mean":1,"stddev":0.1,"median":1,"user":0,"system":0,"min":1,"max":1,"times":[1],"exit_codes":[0],"parameters":{"p":"\u001b[31mred"}}]}"#,
+    )
+    .unwrap();
+
+    let output = hyperfine()
+        .arg("--import-json")
+        .arg(&import_path)
+        .arg("--export-markdown")
+        .arg(&markdown_path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(!stdout.contains('\u{1b}'), "raw ESC leaked to the terminal");
+    assert!(stdout.contains("\\u{1b}]0;PWNED\\u{7}\\u{1b}[2Jevil (imported)"));
+
+    let markdown = std::fs::read_to_string(&markdown_path).unwrap();
+    assert!(!markdown.contains('\u{1b}'), "raw ESC leaked to the export");
+}
