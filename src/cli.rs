@@ -552,6 +552,31 @@ pub fn build_command() -> Command {
                 .help("Generate a shell completions script for the given shell and print it to stdout.")
         )
         .arg(
+            Arg::new("discard-outliers")
+                .long("discard-outliers")
+                .action(ArgAction::Set)
+                .value_name("Z")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("default")
+                .help("Exclude outlier runs from all statistics. A run is an outlier if its \
+                       modified Z-score exceeds Z (default: the threshold of the outlier warning). \
+                       At most 5% of the runs (but at least one) are discarded; if more runs look \
+                       like outliers, nothing is discarded and a warning is shown instead.")
+                .long_help("Exclude outlier runs from all statistics (mean, σ, median, min/max, \
+                       deep stats, relative speed and exports). A run is an outlier if its modified \
+                       Z-score (distance from the median in units of the median absolute \
+                       deviation, scaled by 1.4826) exceeds Z. Without a value, the threshold of \
+                       the outlier warning is used.\n\n\
+                       At most 5% of the runs (but always at least one) can be discarded. If more \
+                       runs look like outliers, \
+                       the run time distribution is probably multimodal: then nothing is \
+                       discarded and a warning is shown instead.\n\n\
+                       The indices of discarded runs are exported as 'discarded_outliers'; the \
+                       per-run arrays in the JSON export only contain the kept runs.\n\n\
+                       Example:  joulex --discard-outliers=20 'make'"),
+        )
+        .arg(
             Arg::new("suppress-outlier-warnings")
                 .long("suppress-outlier-warnings")
                 .action(ArgAction::SetTrue)

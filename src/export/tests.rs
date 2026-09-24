@@ -45,6 +45,7 @@ fn test_markup_export_auto_ms() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -67,6 +68,7 @@ fn test_markup_export_auto_ms() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
     ];
 
@@ -134,6 +136,7 @@ fn test_markup_export_auto_s() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -156,6 +159,7 @@ fn test_markup_export_auto_s() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
     ];
 
@@ -223,6 +227,7 @@ fn test_markup_export_manual_ms() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -245,6 +250,7 @@ fn test_markup_export_manual_ms() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
     ];
 
@@ -311,6 +317,7 @@ fn test_markup_export_manual_s() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -333,6 +340,7 @@ fn test_markup_export_manual_s() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
     ];
 
@@ -398,6 +406,7 @@ fn test_markup_export_zero_mean_displays_na() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -420,6 +429,7 @@ fn test_markup_export_zero_mean_displays_na() {
             exit_codes: vec![Some(0), Some(0), Some(0)],
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
+            discarded_outliers: Vec::new(),
         },
     ];
 

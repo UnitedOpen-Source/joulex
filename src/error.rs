@@ -64,4 +64,7 @@ pub enum OptionsError<'a> {
          joulex aborts on the first failed run"
     )]
     OmitFailedRunsRequiresIgnoreFailure,
+
+    #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
+    InvalidOutlierThreshold(String),
 }

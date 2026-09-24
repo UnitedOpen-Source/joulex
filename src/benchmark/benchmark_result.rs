@@ -81,6 +81,11 @@ pub struct BenchmarkResult {
     /// Benchmark runs omitted due to --omit-failed-runs
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub omitted_failed_runs: Vec<OmittedRun>,
+
+    /// Zero-based indices of the runs excluded from the statistics by
+    /// --discard-outliers
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub discarded_outliers: Vec<usize>,
 }
 
 /// Information about a benchmark run that was omitted due to failure.

@@ -48,7 +48,8 @@ Benchmark 1: sleep 0.05
 |---|---|
 | *Command took less than 5 ms to complete* | Shell start-up correction can't be more precise than this. Use `-N`/`--shell=none` to avoid the shell entirely. |
 | *The first benchmarking run … was significantly slower* | Caching effects (file system cache, JIT, lazy loading). Use `--warmup N` to benchmark a warm state, or `--prepare` to reset caches before *every* run for a cold state. |
-| *Statistical outliers were detected* | A few runs were far from the median (modified Z-score). Something else was using the machine; see [Reducing noise](#reducing-noise). Silence it with `--suppress-outlier-warnings`. |
+| *Statistical outliers were detected* | A few runs were far from the median (modified Z-score). Something else was using the machine; see [Reducing noise](#reducing-noise). Silence it with `--suppress-outlier-warnings`, or exclude them from the statistics with `--discard-outliers` (at most 5% of the runs, but at least one; the discarded run numbers are exported as `discarded_outliers`). |
+| *Too many of the N runs … look like outliers, so none were discarded* | `--discard-outliers` refused to drop more than 5% of the runs: the distribution is probably multimodal (two clusters of run times), and dropping runs would hide that. |
 | *Substantial off-CPU time detected* | Wall time ≥ 5 × CPU time: the command mostly waited. That's expected for I/O-, network- or sleep-bound commands, but it means you are measuring the environment as much as the program. |
 | *Ignoring non-zero exit code* | `-i`/`--ignore-exit-code` is active and some runs failed. With `--omit-failed-runs`, failed runs are excluded from the statistics. |
 
