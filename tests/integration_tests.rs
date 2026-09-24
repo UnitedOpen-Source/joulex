@@ -339,6 +339,34 @@ fn can_ignore_multiple_exit_codes() {
 
 #[cfg(unix)]
 #[test]
+fn ignore_exit_code_is_an_alias_for_ignore_failure() {
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--ignore-exit-code")
+        .arg("false")
+        .assert()
+        .success();
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--ignore-exit-code=1")
+        .arg("exit 1")
+        .assert()
+        .success();
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--ignore-exit-code=1")
+        .arg("exit 2")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Use the '-i'/'--ignore-exit-code' option",
+        ));
+}
+
+#[cfg(unix)]
+#[test]
 fn ignore_failure_with_all_non_zero() {
     // Test explicit "all-non-zero" mode
     hyperfine()
