@@ -7,7 +7,13 @@ updates:
       time: "04:00"
       timezone: Europe/Berlin
     open-pull-requests-limit: 2
+    # Wait before proposing freshly published versions, which may be
+    # malicious or yanked shortly after release.
+    cooldown:
+      default-days: 7
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    cooldown:
+      default-days: 7
