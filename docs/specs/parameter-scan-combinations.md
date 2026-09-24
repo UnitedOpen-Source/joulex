@@ -2,7 +2,7 @@
 
 **Issue:** [#45](https://github.com/UnitedOpen-Source/joulex/issues/45)  
 **Author:** Matheus Breguêz <matbrgz@gmail.com>  
-**Status:** In Progress  
+**Status:** Completed  
 **Upstream Reference:** `sharkdp/hyperfine#575`
 
 ---
