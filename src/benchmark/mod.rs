@@ -389,7 +389,7 @@ impl<'a> BenchmarkRunner<'a> {
             0.0
         });
         let cpu_str = if let Some(pct) = cpu_percent {
-            format!(", CPU: {:.0}%", pct)
+            format!(", CPU: {pct:.0}%")
         } else {
             String::new()
         };
@@ -463,16 +463,16 @@ impl<'a> BenchmarkRunner<'a> {
                     };
 
                     let energy_str = if let Some(sd) = stddev_joules {
-                        format!("{:.3} ± {:.3} J", mean_joules, sd)
+                        format!("{mean_joules:.3} ± {sd:.3} J")
                     } else {
-                        format!("{:.3} J", mean_joules)
+                        format!("{mean_joules:.3} J")
                     };
 
                     println!(
                         "  Energy ({}):        {:>14}    [Power: {}]",
                         "mean".yellow().bold(),
                         energy_str.yellow().bold(),
-                        format!("{:.2} W", watts).yellow()
+                        format!("{watts:.2} W").yellow()
                     );
                 } else {
                     println!(

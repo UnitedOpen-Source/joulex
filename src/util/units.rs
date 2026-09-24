@@ -47,7 +47,7 @@ pub fn format_bytes(bytes: u64) -> String {
     } else if b >= KB {
         format!("{:.1} KB", b / KB)
     } else {
-        format!("{} B", bytes)
+        format!("{bytes} B")
     }
 }
 

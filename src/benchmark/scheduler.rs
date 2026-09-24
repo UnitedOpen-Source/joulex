@@ -274,7 +274,7 @@ impl<'a> Scheduler<'a> {
 
                     for item in others {
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
-                            format!(" ± {}", format!("{:.2}", stddev).green())
+                            format!(" ± {}", format!("{stddev:.2}").green())
                         } else {
                             "".into()
                         };
