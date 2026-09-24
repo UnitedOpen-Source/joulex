@@ -442,6 +442,33 @@ pub fn build_command() -> Command {
                        under 'joulex.labels' in JSON and as 'label_KEY' columns in CSV."),
         )
         .arg(
+            Arg::new("export-markdown-runs")
+                .long("export-markdown-runs")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Export one Markdown table per benchmark with every timed run (iteration, \
+                       wall/user/system time, peak memory, energy, exit code) to the given FILE. \
+                       Runs removed by --omit-failed-runs or --discard-outliers are not listed; \
+                       the iteration numbers show the gaps."),
+        )
+        .arg(
+            Arg::new("export-orgmode-runs")
+                .long("export-orgmode-runs")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Like --export-markdown-runs, but as Emacs org-mode tables."),
+        )
+        .arg(
+            Arg::new("export-asciidoc-runs")
+                .long("export-asciidoc-runs")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Like --export-markdown-runs, but as AsciiDoc tables."),
+        )
+        .arg(
             Arg::new("export-json")
                 .long("export-json")
                 .action(ArgAction::Set)

@@ -6,6 +6,10 @@ use super::markup::Alignment;
 pub struct MarkdownExporter {}
 
 impl MarkupExporter for MarkdownExporter {
+    fn heading(&self, cmd: &str) -> String {
+        format!("### {}\n\n", self.command(cmd))
+    }
+
     fn table_row(&self, cells: &[&str]) -> String {
         format!("| {} |\n", cells.join(" | "))
     }

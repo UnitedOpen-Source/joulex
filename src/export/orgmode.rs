@@ -5,6 +5,10 @@ use crate::export::markup::MarkupExporter;
 pub struct OrgmodeExporter {}
 
 impl MarkupExporter for OrgmodeExporter {
+    fn heading(&self, cmd: &str) -> String {
+        format!("* {}\n", self.command(cmd))
+    }
+
     fn table_row(&self, cells: &[&str]) -> String {
         format!(
             "| {}  |  {} |\n",

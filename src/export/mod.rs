@@ -10,6 +10,7 @@ mod markdown;
 mod markup;
 pub mod metadata;
 mod orgmode;
+mod runs;
 #[cfg(test)]
 mod tests;
 
@@ -19,6 +20,7 @@ use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
 use self::metadata::{parse_labels, ExportMetadata};
 use self::orgmode::OrgmodeExporter;
+use self::runs::RunsExporter;
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
 use crate::options::SortOrder;
@@ -44,6 +46,15 @@ pub enum ExportType {
 
     /// Emacs org-mode tables
     Orgmode,
+
+    /// One Markdown table per benchmark with every run
+    MarkdownRuns,
+
+    /// One org-mode table per benchmark with every run
+    OrgmodeRuns,
+
+    /// One AsciiDoc table per benchmark with every run
+    AsciidocRuns,
 }
 
 /// Interface for different exporters.
@@ -117,6 +128,9 @@ impl ExportManager {
             add_exporter("export-csv", ExportType::Csv)?;
             add_exporter("export-markdown", ExportType::Markdown)?;
             add_exporter("export-orgmode", ExportType::Orgmode)?;
+            add_exporter("export-markdown-runs", ExportType::MarkdownRuns)?;
+            add_exporter("export-orgmode-runs", ExportType::OrgmodeRuns)?;
+            add_exporter("export-asciidoc-runs", ExportType::AsciidocRuns)?;
         }
         Ok(export_manager)
     }
@@ -133,6 +147,9 @@ impl ExportManager {
             }),
             ExportType::Markdown => Box::<MarkdownExporter>::default(),
             ExportType::Orgmode => Box::<OrgmodeExporter>::default(),
+            ExportType::MarkdownRuns => Box::<RunsExporter<MarkdownExporter>>::default(),
+            ExportType::OrgmodeRuns => Box::<RunsExporter<OrgmodeExporter>>::default(),
+            ExportType::AsciidocRuns => Box::<RunsExporter<AsciidocExporter>>::default(),
         };
 
         self.exporters.push(ExporterWithTarget {
