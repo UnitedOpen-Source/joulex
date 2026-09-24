@@ -359,7 +359,7 @@ pub fn build_command() -> Command {
             Arg::new("deep-stats")
                 .long("deep-stats")
                 .action(ArgAction::SetTrue)
-                .help("Perform deep statistical analysis (bootstrapped confidence intervals and kernel density estimation)."),
+                .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
         )
         .arg(
             Arg::new("sort")
