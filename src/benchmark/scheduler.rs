@@ -16,6 +16,10 @@ pub struct Scheduler<'a> {
     options: &'a Options,
     export_manager: &'a ExportManager,
     results: Vec<BenchmarkResult>,
+    /// Index into `results` of the `--reference` command's result, if any.
+    /// Imported results (`--import-json`) come first, so this is not
+    /// necessarily 0.
+    reference_index: Option<usize>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -29,6 +33,7 @@ impl<'a> Scheduler<'a> {
             options,
             export_manager,
             results: vec![],
+            reference_index: None,
         }
     }
 
@@ -67,6 +72,9 @@ impl<'a> Scheduler<'a> {
         executor.calibrate()?;
 
         let display_offset = self.results.len();
+        // The reference command (if any) is benchmarked first, right after the
+        // imported results.
+        self.reference_index = reference.as_ref().map(|_| display_offset);
         let commands_to_run: Vec<(usize, &Command)> = reference
             .iter()
             .chain(self.commands.iter())
@@ -250,30 +258,28 @@ impl<'a> Scheduler<'a> {
             return;
         }
 
-        let results: Vec<_> = if self.options.filter_failed {
-            self.results.iter().filter(|r| !r.has_failure()).collect()
-        } else {
-            self.results.iter().collect()
-        };
+        // Keep track of each result's index in `self.results`, so that the
+        // reference can be found again after filtering.
+        let results: Vec<(usize, &BenchmarkResult)> = self
+            .results
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !(self.options.filter_failed && r.has_failure()))
+            .collect();
 
         if results.len() < 2 {
             return;
         }
 
-        let results_slice: Vec<_> = results.iter().map(|r| (*r).clone()).collect();
+        let results_slice: Vec<_> = results.iter().map(|(_, r)| (*r).clone()).collect();
 
-        let reference = if self.options.reference_command.is_some() {
-            // When a reference command is set, it's always the first result.
-            // If it was filtered out, fall back to the fastest remaining result.
-            let ref_cmd = &self.results[0];
-            if self.options.filter_failed && ref_cmd.has_failure() {
-                relative_speed::fastest_of(&results_slice)
-            } else {
-                &results_slice[0]
-            }
-        } else {
-            relative_speed::fastest_of(&results_slice)
-        };
+        // Use the `--reference` command's result if it is still present,
+        // otherwise (no reference, or it was filtered out) the fastest one.
+        let reference = self
+            .reference_index
+            .and_then(|index| results.iter().position(|(i, _)| *i == index))
+            .map(|position| &results_slice[position])
+            .unwrap_or_else(|| relative_speed::fastest_of(&results_slice));
 
         if let Some(annotated_results) = relative_speed::compute_with_check_from_reference(
             &results_slice,
