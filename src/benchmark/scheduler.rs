@@ -1,12 +1,13 @@
 use super::benchmark_result::BenchmarkResult;
 use super::executor::{Executor, MockExecutor, RawExecutor, ShellExecutor};
-use super::{relative_speed, Benchmark};
+use super::{relative_speed, Benchmark, BenchmarkRunner};
 use colored::*;
 use std::cmp::Ordering;
 
 use crate::command::{Command, Commands};
 use crate::export::ExportManager;
-use crate::options::{ExecutorKind, Options, OutputStyleOption, SortOrder};
+use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
+use crate::output::progress_bar::get_progress_bar;
 
 use anyhow::Result;
 
@@ -66,18 +67,139 @@ impl<'a> Scheduler<'a> {
         executor.calibrate()?;
 
         let display_offset = self.results.len();
-        for (number, cmd) in reference.iter().chain(self.commands.iter()).enumerate() {
-            self.results
-                .push(Benchmark::new(number, number + display_offset, cmd, self.options, &*executor).run()?);
+        let commands_to_run: Vec<(usize, &Command)> = reference
+            .iter()
+            .chain(self.commands.iter())
+            .enumerate()
+            .collect();
 
-            // We export results after each individual benchmark, because
-            // we would risk losing them if a later benchmark fails.
-            let intermediate_results: Vec<_> = if self.options.filter_failed {
-                self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+        if self.options.schedule == ScheduleMode::RoundRobin && commands_to_run.len() > 1 {
+            let mut runners: Vec<BenchmarkRunner> = commands_to_run
+                .iter()
+                .map(|&(number, cmd)| {
+                    BenchmarkRunner::new(
+                        number,
+                        number + display_offset,
+                        cmd,
+                        self.options,
+                        &*executor,
+                    )
+                })
+                .collect();
+
+            // 1. Setup phase for all commands
+            for runner in &runners {
+                runner.run_setup()?;
+            }
+
+            // 2. Warmup phase (interleaved)
+            if self.options.warmup_count > 0 {
+                let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
+                    Some(get_progress_bar(
+                        self.options.warmup_count * runners.len() as u64,
+                        "Performing round-robin warmup runs",
+                        self.options.output_style,
+                    ))
+                } else {
+                    None
+                };
+
+                for w in 0..self.options.warmup_count {
+                    for runner in &mut runners {
+                        runner.run_warmup_iteration(w)?;
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.inc(1);
+                        }
+                    }
+                }
+
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.finish_and_clear();
+                }
+            }
+
+            // 3. Initial measurement phase
+            let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
+                Some(get_progress_bar(
+                    runners.len() as u64,
+                    "Initial round-robin measurements",
+                    self.options.output_style,
+                ))
             } else {
-                self.results.clone()
+                None
             };
-            self.export_manager.write_results(&intermediate_results, true)?;
+
+            for runner in &mut runners {
+                runner.run_initial_measurement()?;
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.inc(1);
+                }
+            }
+
+            if let Some(bar) = progress_bar.as_ref() {
+                bar.finish_and_clear();
+            }
+
+            let max_count = runners.iter().map(|r| r.count).max().unwrap_or(1);
+            let total_remaining_runs: u64 = runners.iter().map(|r| r.count.saturating_sub(1)).sum();
+
+            let progress_bar = if self.options.output_style != OutputStyleOption::Disabled && total_remaining_runs > 0 {
+                Some(get_progress_bar(
+                    total_remaining_runs,
+                    "Performing round-robin benchmark runs",
+                    self.options.output_style,
+                ))
+            } else {
+                None
+            };
+
+            // 4. Interleaved timing iterations
+            for i in 1..max_count {
+                for runner in &mut runners {
+                    if i < runner.count {
+                        runner.run_timed_iteration(i)?;
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.inc(1);
+                        }
+                    }
+                }
+            }
+
+            if let Some(bar) = progress_bar.as_ref() {
+                bar.finish_and_clear();
+            }
+
+            // 5. Cleanup phase
+            for runner in &runners {
+                runner.run_cleanup()?;
+            }
+
+            // 6. Finish and collect results
+            for runner in runners {
+                let res = runner.finish(true)?;
+                self.results.push(res);
+
+                let intermediate_results: Vec<_> = if self.options.filter_failed {
+                    self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+                } else {
+                    self.results.clone()
+                };
+                self.export_manager.write_results(&intermediate_results, true)?;
+            }
+        } else {
+            for (number, cmd) in commands_to_run {
+                self.results
+                    .push(Benchmark::new(number, number + display_offset, cmd, self.options, &*executor).run()?);
+
+                // We export results after each individual benchmark, because
+                // we would risk losing them if a later benchmark fails.
+                let intermediate_results: Vec<_> = if self.options.filter_failed {
+                    self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+                } else {
+                    self.results.clone()
+                };
+                self.export_manager.write_results(&intermediate_results, true)?;
+            }
         }
 
         Ok(())
@@ -254,6 +376,60 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
 #[test]
 fn scheduler_basic() -> Result<()> {
     insta::assert_yaml_snapshot!(generate_results(&["--runs=2", "sleep 0.123", "sleep 0.456"])?, @r#"
+    - command: sleep 0.123
+      mean: 0.123
+      stddev: 0
+      median: 0.123
+      user: 0
+      system: 0
+      min: 0.123
+      max: 0.123
+      times:
+        - 0.123
+        - 0.123
+      user_times:
+        - 0
+        - 0
+      system_times:
+        - 0
+        - 0
+      memory_usage_byte:
+        - 0
+        - 0
+      exit_codes:
+        - 0
+        - 0
+    - command: sleep 0.456
+      mean: 0.456
+      stddev: 0
+      median: 0.456
+      user: 0
+      system: 0
+      min: 0.456
+      max: 0.456
+      times:
+        - 0.456
+        - 0.456
+      user_times:
+        - 0
+        - 0
+      system_times:
+        - 0
+        - 0
+      memory_usage_byte:
+        - 0
+        - 0
+      exit_codes:
+        - 0
+        - 0
+    "#);
+
+    Ok(())
+}
+
+#[test]
+fn scheduler_round_robin() -> Result<()> {
+    insta::assert_yaml_snapshot!(generate_results(&["--schedule=round-robin", "--runs=2", "sleep 0.123", "sleep 0.456"])?, @r#"
     - command: sleep 0.123
       mean: 0.123
       stddev: 0

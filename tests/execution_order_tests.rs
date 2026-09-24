@@ -561,3 +561,89 @@ fn setup_separate_prepare_reference_separate_conclude_cleanup_combined() {
         .expect_output("cleanup")
         .run();
 }
+
+#[test]
+fn benchmarks_are_executed_round_robin() {
+    ExecutionOrderTest::new()
+        .arg("--schedule=round-robin")
+        .arg("--runs=2")
+        .command("command 1")
+        .command("command 2")
+        .expect_output("command 1")
+        .expect_output("command 2")
+        .expect_output("command 1")
+        .expect_output("command 2")
+        .run();
+}
+
+#[test]
+fn benchmarks_are_executed_round_robin_flag() {
+    ExecutionOrderTest::new()
+        .arg("--round-robin")
+        .arg("--runs=3")
+        .command("command 1")
+        .command("command 2")
+        .expect_output("command 1")
+        .expect_output("command 2")
+        .expect_output("command 1")
+        .expect_output("command 2")
+        .expect_output("command 1")
+        .expect_output("command 2")
+        .run();
+}
+
+#[test]
+fn setup_prepare_conclude_cleanup_round_robin() {
+    ExecutionOrderTest::new()
+        .arg("--schedule=round-robin")
+        .arg("--warmup=1")
+        .arg("--runs=2")
+        .setup("setup")
+        .prepare("prepare")
+        .conclude("conclude")
+        .cleanup("cleanup")
+        .command("command 1")
+        .command("command 2")
+        // Setup
+        .expect_output("setup")
+        .expect_output("setup")
+        // Warmup 0
+        .expect_output("prepare")
+        .expect_output("command 1")
+        .expect_output("conclude")
+        .expect_output("prepare")
+        .expect_output("command 2")
+        .expect_output("conclude")
+        // Run 0
+        .expect_output("prepare")
+        .expect_output("command 1")
+        .expect_output("conclude")
+        .expect_output("prepare")
+        .expect_output("command 2")
+        .expect_output("conclude")
+        // Run 1
+        .expect_output("prepare")
+        .expect_output("command 1")
+        .expect_output("conclude")
+        .expect_output("prepare")
+        .expect_output("command 2")
+        .expect_output("conclude")
+        // Cleanup
+        .expect_output("cleanup")
+        .expect_output("cleanup")
+        .run();
+}
+
+#[test]
+fn reference_round_robin_execution() {
+    ExecutionOrderTest::new()
+        .arg("--schedule=round-robin")
+        .arg("--runs=2")
+        .reference("reference")
+        .command("command 1")
+        .expect_output("reference")
+        .expect_output("command 1")
+        .expect_output("reference")
+        .expect_output("command 1")
+        .run();
+}

@@ -119,6 +119,17 @@ impl Default for RunBounds {
     }
 }
 
+/// Benchmark execution schedule mode
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ScheduleMode {
+    /// Execute all iterations for one command before proceeding to the next
+    #[default]
+    Grouped,
+
+    /// Interleave iterations across all commands in round-robin fashion
+    RoundRobin,
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub enum CommandInputPolicy {
     /// Read from the null device
@@ -258,6 +269,9 @@ pub struct Options {
 
     /// Suppress statistical outlier warnings
     pub suppress_outlier_warnings: bool,
+
+    /// Execution schedule mode
+    pub schedule: ScheduleMode,
 }
 
 impl Default for Options {
@@ -284,6 +298,7 @@ impl Default for Options {
             deep_stats: false,
             filter_failed: false,
             suppress_outlier_warnings: false,
+            schedule: ScheduleMode::Grouped,
         }
     }
 }
@@ -490,6 +505,17 @@ impl Options {
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
 
+        options.schedule = if matches.get_flag("round-robin") {
+            ScheduleMode::RoundRobin
+        } else {
+            match matches.get_one::<String>("schedule").map(|s| s.as_str()) {
+                Some("round-robin") | Some("sequential") | Some("interleaved") => {
+                    ScheduleMode::RoundRobin
+                }
+                _ => ScheduleMode::Grouped,
+            }
+        };
+
         Ok(options)
     }
 
@@ -589,4 +615,35 @@ fn test_suppress_outlier_warnings_option() {
     let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
     let options_default = Options::from_cli_arguments(&matches_default).unwrap();
     assert!(!options_default.suppress_outlier_warnings);
+}
+
+#[test]
+fn test_schedule_options() {
+    let matches = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--schedule=round-robin",
+        "echo test",
+    ]);
+    let options = Options::from_cli_arguments(&matches).unwrap();
+    assert_eq!(options.schedule, ScheduleMode::RoundRobin);
+
+    let matches_seq = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--schedule=sequential",
+        "echo test",
+    ]);
+    let options_seq = Options::from_cli_arguments(&matches_seq).unwrap();
+    assert_eq!(options_seq.schedule, ScheduleMode::RoundRobin);
+
+    let matches_flag = crate::cli::build_command().get_matches_from(vec![
+        "joulex",
+        "--round-robin",
+        "echo test",
+    ]);
+    let options_flag = Options::from_cli_arguments(&matches_flag).unwrap();
+    assert_eq!(options_flag.schedule, ScheduleMode::RoundRobin);
+
+    let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
+    let options_default = Options::from_cli_arguments(&matches_default).unwrap();
+    assert_eq!(options_default.schedule, ScheduleMode::Grouped);
 }
