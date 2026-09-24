@@ -563,6 +563,12 @@ pub fn build_command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Shortcut for '--schedule round-robin' (interleave benchmark runs across commands).")
         )
+        .arg(
+            Arg::new("allow-setup-with-round-robin")
+                .long("allow-setup-with-round-robin")
+                .action(ArgAction::SetTrue)
+                .help("Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling.")
+        )
 }
 
 #[test]

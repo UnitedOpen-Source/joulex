@@ -4,14 +4,12 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::{cmp, env, fmt, io};
 
-use anyhow::ensure;
+use anyhow::{bail, ensure, Result};
 use clap::ArgMatches;
 
 use crate::command::Commands;
 use crate::error::OptionsError;
 use crate::util::units::{Second, Unit};
-
-use anyhow::Result;
 
 #[cfg(not(windows))]
 pub const DEFAULT_SHELL: &str = "sh";
@@ -275,6 +273,9 @@ pub struct Options {
 
     /// Whether to exclude failed runs from summary statistics
     pub omit_failed_runs: bool,
+
+    /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
+    pub allow_setup_with_round_robin: bool,
 }
 
 impl Default for Options {
@@ -303,6 +304,7 @@ impl Default for Options {
             suppress_outlier_warnings: false,
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
+            allow_setup_with_round_robin: false,
         }
     }
 }
@@ -527,6 +529,8 @@ impl Options {
             }
         };
 
+        options.allow_setup_with_round_robin = matches.get_flag("allow-setup-with-round-robin");
+
         Ok(options)
     }
 
@@ -536,6 +540,31 @@ impl Options {
 
         if num_commands == 0 {
             return Ok(());
+        }
+
+        if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {
+            let setup_has_param = self.setup_command.as_ref().is_some_and(|setup| {
+                commands.iter().any(|c| {
+                    c.get_parameters()
+                        .iter()
+                        .any(|(n, _)| setup.contains(&format!("{{{n}}}")))
+                })
+            });
+            let cleanup_has_param = self.cleanup_command.as_ref().is_some_and(|cleanup| {
+                commands.iter().any(|c| {
+                    c.get_parameters()
+                        .iter()
+                        .any(|(n, _)| cleanup.contains(&format!("{{{n}}}")))
+                })
+            });
+            if setup_has_param || cleanup_has_param {
+                bail!(
+                    "The '--setup' and/or '--cleanup' options differ between benchmarks (due to parameter substitution) \
+                     and cannot be combined with '--schedule round-robin'. \
+                     Setup runs once per benchmark batch, but round-robin interleaves runs across benchmarks. \
+                     Use '--prepare' for per-run state, or use the default grouped schedule."
+                );
+            }
         }
 
         if let Some(preparation_command) = &self.preparation_command {
