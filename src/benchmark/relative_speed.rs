@@ -32,7 +32,7 @@ fn compute_relative_speeds<'a>(
     let mut results: Vec<_> = results
         .iter()
         .map(|result| {
-            let is_reference = result == reference;
+            let is_reference = std::ptr::eq(result, reference);
             let relative_ordering = compare_mean_time(result, reference);
 
             if result.mean == 0.0 {
@@ -120,18 +120,18 @@ pub fn compute_with_check<'a>(
 /// Populates entries with relative_speed = NaN and relative_speed_stddev = None.
 pub fn compute_without_ratios<'a>(
     results: &'a [BenchmarkResult],
+    reference: &'a BenchmarkResult,
     sort_order: SortOrder,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
     if results.is_empty() {
         return Vec::new();
     }
 
-    let fastest = fastest_of(results);
     let mut results: Vec<_> = results
         .iter()
         .map(|result| {
-            let is_reference = result == fastest;
-            let relative_ordering = compare_mean_time(result, fastest);
+            let is_reference = std::ptr::eq(result, reference);
+            let relative_ordering = compare_mean_time(result, reference);
 
             BenchmarkResultWithRelativeSpeed {
                 result,
@@ -238,12 +238,34 @@ fn test_compute_relative_speed_for_zero_times() {
 fn test_compute_without_ratios() {
     let results = vec![create_result("cmd1", 0.0), create_result("cmd2", 0.0)];
 
-    let annotated_results = compute_without_ratios(&results, SortOrder::Command);
+    let annotated_results = compute_without_ratios(&results, &results[0], SortOrder::Command);
     assert_eq!(annotated_results.len(), 2);
     assert!(annotated_results[0].relative_speed.is_nan());
     assert!(annotated_results[1].relative_speed.is_nan());
     assert!(annotated_results[0].relative_speed_stddev.is_none());
     assert!(annotated_results[1].relative_speed_stddev.is_none());
+    assert!(annotated_results[0].is_reference);
+    assert!(!annotated_results[1].is_reference);
+}
+
+#[test]
+fn test_compute_without_ratios_identical_results_single_reference() {
+    let results = vec![create_result("cmd1", 0.0), create_result("cmd1", 0.0)];
+
+    let annotated_results = compute_without_ratios(&results, &results[1], SortOrder::Command);
+    assert!(!annotated_results[0].is_reference);
+    assert!(annotated_results[1].is_reference);
+}
+
+#[test]
+fn test_compute_relative_speed_identical_results_single_reference() {
+    let results = vec![create_result("cmd1", 1.0), create_result("cmd1", 1.0)];
+
+    let annotated_results = compute_with_check(&results, SortOrder::Command).unwrap();
+    assert_eq!(
+        annotated_results.iter().filter(|r| r.is_reference).count(),
+        1
+    );
 }
 
 #[test]
@@ -252,6 +274,5 @@ fn test_compute_empty_results() {
     assert!(compute_with_check(&results, SortOrder::Command)
         .unwrap()
         .is_empty());
-    assert!(compute_without_ratios(&results, SortOrder::Command).is_empty());
     assert!(compute(&results, SortOrder::Command).is_empty());
 }
