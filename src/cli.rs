@@ -180,7 +180,7 @@ pub fn build_command() -> Command {
                      This performs benchmarks for 'make -j 1', 'make -j 2', …, 'make -j 8'.\n\n\
                      The option can be specified multiple times and combined with --parameter-list \
                      or --parameter-file to run benchmarks for all possible parameter combinations.\n\n\
-                     To have the value increase following different patterns, use shell arithmetics.\n\n  \
+                     To have the value increase following different patterns, use shell arithmetic.\n\n  \
                      Example: joulex -P size 0 3 'sleep $((2**{size}))'\n\n\
                      This performs benchmarks with power of 2 increases: 'sleep 1', 'sleep 2', 'sleep 4', …\n\
                      The exact syntax may vary depending on your shell and OS."
