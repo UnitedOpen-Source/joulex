@@ -5,6 +5,10 @@ use crate::export::markup::MarkupExporter;
 pub struct AsciidocExporter {}
 
 impl MarkupExporter for AsciidocExporter {
+    fn heading(&self, cmd: &str) -> String {
+        format!("=== {}\n", self.command(cmd))
+    }
+
     fn table_header(&self, cell_aligmnents: &[Alignment]) -> String {
         format!(
             "[cols=\"{}\"]\n|===",

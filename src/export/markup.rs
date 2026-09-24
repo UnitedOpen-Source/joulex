@@ -103,9 +103,12 @@ pub trait MarkupExporter {
     /// Implementations must make sure the text cannot close the code span or the
     /// table cell (see #25).
     fn command(&self, cmd: &str) -> String;
+
+    /// A section heading for one command (used by the per-run exports).
+    fn heading(&self, cmd: &str) -> String;
 }
 
-fn determine_unit_from_results(results: &[BenchmarkResult]) -> Unit {
+pub(super) fn determine_unit_from_results(results: &[BenchmarkResult]) -> Unit {
     if let Some(first_result) = results.first() {
         // Use the first BenchmarkResult entry to determine the unit for all entries.
         format_duration_value(first_result.mean, None).1
