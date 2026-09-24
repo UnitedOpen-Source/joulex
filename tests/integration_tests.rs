@@ -1316,3 +1316,34 @@ fn test_deep_stats_identical_constant_samples() {
         .stdout(predicate::str::contains("t = NaN").not())
         .stdout(predicate::str::contains("significant (p < 0.01)").not());
 }
+
+#[test]
+fn help_has_no_colors_when_not_a_terminal() {
+    let output = hyperfine().arg("--help").output().unwrap();
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains('\u{1b}'));
+}
+
+#[test]
+fn help_respects_no_color_even_when_colors_are_forced() {
+    let output = hyperfine()
+        .env("CLICOLOR_FORCE", "1")
+        .env("NO_COLOR", "1")
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert!(!String::from_utf8_lossy(&output.stdout).contains('\u{1b}'));
+}
+
+#[test]
+fn help_is_colored_when_colors_are_forced() {
+    let output = hyperfine()
+        .env("CLICOLOR_FORCE", "1")
+        .env_remove("NO_COLOR")
+        .arg("--help")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    // bold green section headers, e.g. "Usage:" / "Arguments:"
+    assert!(stdout.contains("\u{1b}[1m\u{1b}[32m") || stdout.contains("\u{1b}[1;32m"));
+}
