@@ -24,19 +24,6 @@ use std::process::{ChildStdout, Command, ExitStatus};
 
 use anyhow::Result;
 
-#[cfg(not(windows))]
-#[derive(Debug, Copy, Clone)]
-struct CPUTimes {
-    /// Total amount of time spent executing in user mode
-    pub user_usec: i64,
-
-    /// Total amount of time spent executing in kernel mode
-    pub system_usec: i64,
-
-    /// Maximum amount of memory used by the process, in bytes
-    pub memory_usage_byte: u64,
-}
-
 /// Used to indicate the result of running a command
 #[derive(Debug, Copy, Clone)]
 pub struct TimerResult {
@@ -81,9 +68,6 @@ fn discard(output: ChildStdout) {
 
 /// Execute the given command and return a timing summary
 pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
-    #[cfg(not(windows))]
-    let cpu_timer = self::unix_timer::CPUTimer::start()?;
-
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -106,11 +90,17 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
         discard(output);
     }
 
+    // On Unix, reap the child with wait4 to get the resource usage of exactly
+    // this process tree (see unix_timer::wait_with_rusage).
+    #[cfg(not(windows))]
+    let (status, usage) = self::unix_timer::wait_with_rusage(&child)?;
+    #[cfg(windows)]
     let status = child.wait()?;
 
     let time_real = wallclock_timer.stop();
     #[cfg(not(windows))]
-    let (time_user, time_system, memory_usage_byte) = cpu_timer.stop()?;
+    let (time_user, time_system, memory_usage_byte) =
+        (usage.user, usage.system, usage.max_rss_byte);
     #[cfg(windows)]
     let (time_user, time_system, memory_usage_byte) = cpu_timer.stop();
 

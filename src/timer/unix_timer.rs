@@ -1,117 +1,122 @@
 #![cfg(not(windows))]
 
-use std::convert::TryFrom;
 use std::io;
 use std::mem;
+use std::os::unix::process::ExitStatusExt;
+use std::process::{Child, ExitStatus};
 
-use crate::timer::CPUTimes;
 use crate::util::units::Second;
 
-#[derive(Debug, Copy, Clone)]
-pub struct CPUInterval {
-    /// Total amount of time spent executing in user mode
+/// Resource usage of a single benchmarked process (and the descendants it
+/// waited for), as reported by `wait4`.
+#[derive(Debug, Default, Copy, Clone, PartialEq)]
+pub struct ChildUsage {
+    /// Time spent executing in user mode
     pub user: Second,
 
-    /// Total amount of time spent executing in kernel mode
+    /// Time spent executing in kernel mode
     pub system: Second,
+
+    /// Maximum resident set size, in bytes
+    pub max_rss_byte: u64,
 }
 
-pub struct CPUTimer {
-    start_cpu: CPUTimes,
-}
+impl From<&libc::rusage> for ChildUsage {
+    fn from(ru: &libc::rusage) -> Self {
+        #[allow(clippy::useless_conversion)]
+        let seconds =
+            |t: libc::timeval| i64::from(t.tv_sec) as f64 + i64::from(t.tv_usec) as f64 * 1e-6;
 
-impl CPUTimer {
-    pub fn start() -> io::Result<Self> {
-        Ok(CPUTimer {
-            start_cpu: get_cpu_times()?,
-        })
+        // Linux and *BSD report ru_maxrss in KiB, Darwin flavors in bytes
+        let max_rss = u64::try_from(ru.ru_maxrss).unwrap_or(0);
+        let max_rss_byte = if cfg!(any(target_os = "macos", target_os = "ios")) {
+            max_rss
+        } else {
+            max_rss.saturating_mul(1024)
+        };
+
+        ChildUsage {
+            user: seconds(ru.ru_utime),
+            system: seconds(ru.ru_stime),
+            max_rss_byte,
+        }
     }
-
-    pub fn stop(&self) -> io::Result<(Second, Second, u64)> {
-        let end_cpu = get_cpu_times()?;
-        let cpu_interval = cpu_time_interval(&self.start_cpu, &end_cpu);
-        Ok((
-            cpu_interval.user,
-            cpu_interval.system,
-            end_cpu.memory_usage_byte,
-        ))
-    }
 }
 
-/// Read CPU execution times ('user' and 'system')
-fn get_cpu_times() -> io::Result<CPUTimes> {
-    use libc::{getrusage, rusage, RUSAGE_CHILDREN};
-
+/// Wait for `child` to exit and return its exit status together with the
+/// resource usage of that process and of all descendants it waited for (e.g.
+/// the command started by an intermediate shell).
+///
+/// Unlike before/after snapshots of `getrusage(RUSAGE_CHILDREN)`, this gives
+/// per-run values: in particular `ru_maxrss` of RUSAGE_CHILDREN is the maximum
+/// over *all* children ever reaped, so peak memory used to leak across runs,
+/// benchmarks and setup/prepare commands (#46).
+///
+/// The child is reaped by this call, so `child.wait()` must not be called
+/// afterwards.
+pub fn wait_with_rusage(child: &Child) -> io::Result<(ExitStatus, ChildUsage)> {
+    let pid = libc::pid_t::try_from(child.id())
+        .map_err(|_| io::Error::other("child process id does not fit into pid_t"))?;
+    let mut status: libc::c_int = 0;
     // SAFETY: `rusage` is a plain C struct of integers, so the all-zero bit
     // pattern is a valid value.
-    let mut result: rusage = unsafe { mem::zeroed() };
+    let mut usage: libc::rusage = unsafe { mem::zeroed() };
 
-    // SAFETY: `result` is a valid, exclusively borrowed `rusage` that
-    // getrusage fills in; RUSAGE_CHILDREN is a valid `who` argument.
-    if unsafe { getrusage(RUSAGE_CHILDREN, &mut result) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
-
-    const MICROSEC_PER_SEC: i64 = 1000 * 1000;
-
-    // Linux and *BSD return the value in KibiBytes, Darwin flavors in bytes
-    let max_rss_byte = if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
-        result.ru_maxrss
-    } else {
-        result.ru_maxrss * 1024
-    };
-
-    #[allow(clippy::useless_conversion)]
-    Ok(CPUTimes {
-        user_usec: i64::from(result.ru_utime.tv_sec) * MICROSEC_PER_SEC
-            + i64::from(result.ru_utime.tv_usec),
-        system_usec: i64::from(result.ru_stime.tv_sec) * MICROSEC_PER_SEC
-            + i64::from(result.ru_stime.tv_usec),
-        memory_usage_byte: u64::try_from(max_rss_byte).unwrap_or(0),
-    })
-}
-
-/// Compute the time intervals in between two `CPUTimes` snapshots
-fn cpu_time_interval(start: &CPUTimes, end: &CPUTimes) -> CPUInterval {
-    CPUInterval {
-        user: ((end.user_usec - start.user_usec) as f64) * 1e-6,
-        system: ((end.system_usec - start.system_usec) as f64) * 1e-6,
+    loop {
+        // SAFETY: `pid` refers to our own child, which has not been reaped yet
+        // (the caller never calls `Child::wait`); `status` and `usage` are
+        // valid, exclusively borrowed out-pointers.
+        let ret = unsafe { libc::wait4(pid, &mut status, 0, &mut usage) };
+        if ret == pid {
+            return Ok((ExitStatus::from_raw(status), ChildUsage::from(&usage)));
+        }
+        let err = io::Error::last_os_error();
+        if err.kind() != io::ErrorKind::Interrupted {
+            return Err(err);
+        }
     }
 }
 
 #[cfg(test)]
-use approx::assert_relative_eq;
+// The children are reaped by `wait_with_rusage` (wait4), which clippy can't see.
+#[allow(clippy::zombie_processes)]
+mod tests {
+    use super::*;
+    use std::process::Command;
 
-#[test]
-fn test_cpu_time_interval() {
-    let t_a = CPUTimes {
-        user_usec: 12345,
-        system_usec: 54321,
-        memory_usage_byte: 0,
-    };
+    #[test]
+    fn reports_exit_status_and_cpu_time() {
+        let child = Command::new("sh")
+            .args([
+                "-c",
+                "i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done; exit 3",
+            ])
+            .spawn()
+            .unwrap();
+        let (status, usage) = wait_with_rusage(&child).unwrap();
+        assert_eq!(status.code(), Some(3));
+        assert!(usage.user + usage.system > 0.0);
+        assert!(usage.max_rss_byte > 0);
+    }
 
-    let t_b = CPUTimes {
-        user_usec: 20000,
-        system_usec: 70000,
-        memory_usage_byte: 0,
-    };
+    #[test]
+    fn peak_memory_is_per_process() {
+        // A memory-hungry child followed by a tiny one: the second one must
+        // not inherit the first one's peak RSS.
+        let big = Command::new("dd")
+            .args(["if=/dev/zero", "of=/dev/null", "bs=104857600", "count=1"])
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let (_, big_usage) = wait_with_rusage(&big).unwrap();
 
-    let t_zero = cpu_time_interval(&t_a, &t_a);
-    assert!(t_zero.user.abs() < f64::EPSILON);
-    assert!(t_zero.system.abs() < f64::EPSILON);
+        let small = Command::new("true").spawn().unwrap();
+        let (_, small_usage) = wait_with_rusage(&small).unwrap();
 
-    let t_ab = cpu_time_interval(&t_a, &t_b);
-    assert_relative_eq!(0.007655, t_ab.user);
-    assert_relative_eq!(0.015679, t_ab.system);
-
-    let t_ba = cpu_time_interval(&t_b, &t_a);
-    assert_relative_eq!(-0.007655, t_ba.user);
-    assert_relative_eq!(-0.015679, t_ba.system);
-}
-
-#[test]
-fn test_get_cpu_times_succeeds() {
-    let t = get_cpu_times().expect("getrusage(RUSAGE_CHILDREN) should succeed");
-    assert!(t.user_usec >= 0);
-    assert!(t.system_usec >= 0);
+        assert!(big_usage.max_rss_byte > 90 * 1024 * 1024, "{big_usage:?}");
+        assert!(
+            small_usage.max_rss_byte < 50 * 1024 * 1024,
+            "{small_usage:?}"
+        );
+    }
 }
