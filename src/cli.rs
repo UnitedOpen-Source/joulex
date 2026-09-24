@@ -229,7 +229,9 @@ pub fn build_command() -> Command {
                      .\n\nExample:  joulex -L compiler gcc,clang '{compiler} -O2 main.cpp'\n\n\
                      This performs benchmarks for 'gcc -O2 main.cpp' and 'clang -O2 main.cpp'.\n\n\
                      The option can be specified multiple times and combined with --parameter-scan \
-                     or --parameter-file to run benchmarks for all possible parameter combinations.\n"
+                     or --parameter-file to run benchmarks for all possible parameter combinations.\n\n\
+                     Note: values are inserted verbatim and are not shell-escaped. Use \
+                     '--shell=none' for values from untrusted sources.\n"
                 ),
         )
         .arg(
@@ -244,7 +246,9 @@ pub fn build_command() -> Command {
                      Replaces the string '{VAR}' in each command by the current parameter value.\n\n\
                      Example:  joulex -F url urls.txt 'curl {url}'\n\n\
                      The option can be specified multiple times and combined with --parameter-scan \
-                     or --parameter-list to run benchmarks for all possible parameter combinations.\n"
+                     or --parameter-list to run benchmarks for all possible parameter combinations.\n\n\
+                     Note: lines are inserted verbatim and are not shell-escaped. Use \
+                     '--shell=none' for files from untrusted sources.\n"
                 ),
         )
         .arg(
