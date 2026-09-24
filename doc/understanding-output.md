@@ -143,7 +143,7 @@ later combine it with a live run: `joulex --import-json main.json './target/rele
    `sudo cpupower frequency-set -g performance`, and optionally disable turbo boost
    (`echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo`).
 6. **Pin to a core** to avoid migrations (especially on hybrid P/E-core CPUs):
-   `joulex 'taskset -c 2 ./app'` on Linux (a built-in `--affinity` option is planned, #63).
+   `joulex --affinity 2 ./app` (Linux and Windows; also accepts lists like `0,2-3`).
 7. **More runs**: `--min-runs`/`--runs`. The uncertainty of the mean shrinks with √n; use
    `--deep-stats` to see the confidence interval.
 8. **Energy measurements** are the most sensitive to all of the above, because the RAPL

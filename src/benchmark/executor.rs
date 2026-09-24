@@ -62,6 +62,7 @@ fn run_command_and_measure_common(
     command_input_policy: &CommandInputPolicy,
     command_output_policy: &CommandOutputPolicy,
     command_name: &str,
+    affinity: Option<&[usize]>,
 ) -> Result<TimerResult> {
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
@@ -77,7 +78,12 @@ fn run_command_and_measure_common(
         command.env("HYPERFINE_ITERATION", value);
     }
 
-    let result = execute_and_measure(command)
+    #[cfg(target_os = "linux")]
+    if let Some(cpus) = affinity {
+        crate::util::affinity::apply(&mut command, cpus);
+    }
+
+    let result = execute_and_measure(command, affinity)
         .with_context(|| format!("Failed to run command '{command_name}'"))?;
 
     if !result.status.success() {
@@ -146,6 +152,7 @@ impl Executor for RawExecutor<'_> {
             &self.options.command_input_policy,
             output_policy,
             &command.get_command_line(),
+            self.options.affinity.as_deref(),
         )?;
 
         Ok((
@@ -214,6 +221,7 @@ impl Executor for ShellExecutor<'_> {
             &self.options.command_input_policy,
             output_policy,
             &command.get_command_line(),
+            self.options.affinity.as_deref(),
         )?;
 
         // Subtract shell spawning time

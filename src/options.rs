@@ -280,6 +280,9 @@ pub struct Options {
     /// Show and export OS resource counters (--resource-usage)
     pub show_resource_usage: bool,
 
+    /// CPUs to pin every benchmarked process to (--affinity)
+    pub affinity: Option<Vec<usize>>,
+
     /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
     pub allow_setup_with_round_robin: bool,
 }
@@ -312,6 +315,7 @@ impl Default for Options {
             omit_failed_runs: false,
             discard_outliers: None,
             show_resource_usage: false,
+            affinity: None,
             allow_setup_with_round_robin: false,
         }
     }
@@ -520,6 +524,15 @@ impl Options {
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
         options.show_resource_usage = matches.get_flag("resource-usage");
+        options.affinity = matches
+            .get_one::<String>("affinity")
+            .map(|list| -> Result<Vec<usize>, OptionsError> {
+                let cpus = crate::util::affinity::parse_cpu_list(list)
+                    .and_then(|cpus| crate::util::affinity::validate(&cpus).map(|_| cpus))
+                    .map_err(|e| OptionsError::InvalidAffinity(format!("{e:#}")))?;
+                Ok(cpus)
+            })
+            .transpose()?;
         options.discard_outliers = matches
             .get_one::<String>("discard-outliers")
             .map(|value| match value.as_str() {

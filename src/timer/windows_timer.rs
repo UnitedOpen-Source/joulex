@@ -45,6 +45,19 @@ static NtResumeProcess: Lazy<unsafe extern "system" fn(process_handle: HANDLE) -
         unsafe { mem::transmute(nt_resume_process.unwrap()) }
     });
 
+/// Restrict the (still suspended) `child` to the CPUs in `mask`.
+pub fn set_affinity(child: &process::Child, mask: usize) -> std::io::Result<()> {
+    use windows_sys::Win32::System::Threading::SetProcessAffinityMask;
+
+    // SAFETY: the handle belongs to our own child process, which is still alive
+    // (suspended) at this point.
+    let ret = unsafe { SetProcessAffinityMask(child.as_raw_handle() as HANDLE, mask) };
+    if ret == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 pub struct CPUTimer {
     job_object: HANDLE,
 }

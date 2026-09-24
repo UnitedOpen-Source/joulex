@@ -69,7 +69,15 @@ fn discard(output: ChildStdout) {
 }
 
 /// Execute the given command and return a timing summary
-pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
+pub fn execute_and_measure(
+    mut command: Command,
+    affinity: Option<&[usize]>,
+) -> Result<TimerResult> {
+    // On Linux the affinity is applied by the caller (pre_exec); on other
+    // Unix systems --affinity is rejected during option validation.
+    #[cfg(not(windows))]
+    let _ = affinity;
+
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -80,6 +88,11 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
 
     let wallclock_timer = WallClockTimer::start();
     let mut child = command.spawn()?;
+
+    #[cfg(windows)]
+    if let Some(cpus) = affinity {
+        self::windows_timer::set_affinity(&child, crate::util::affinity::windows_mask(cpus))?;
+    }
 
     #[cfg(windows)]
     let cpu_timer = {
