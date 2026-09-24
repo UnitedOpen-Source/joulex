@@ -1237,3 +1237,54 @@ fn test_short_flag_output_and_input() {
     let output_content = std::fs::read_to_string(&output_path).unwrap();
     assert!(output_content.contains("hello short flags"));
 }
+
+#[test]
+fn test_deep_stats_identical_constant_samples() {
+    use predicates::prelude::PredicateBooleanExt;
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let json_path = tempdir.path().join("const.json");
+
+    let json_content = r#"{
+        "results": [
+            {
+                "command": "cmd_a",
+                "mean": 1.0,
+                "stddev": 0.0,
+                "median": 1.0,
+                "user": 0.0,
+                "system": 0.0,
+                "min": 1.0,
+                "max": 1.0,
+                "times": [1.0, 1.0, 1.0, 1.0],
+                "exit_codes": [0, 0, 0, 0]
+            },
+            {
+                "command": "cmd_b",
+                "mean": 1.0,
+                "stddev": 0.0,
+                "median": 1.0,
+                "user": 0.0,
+                "system": 0.0,
+                "min": 1.0,
+                "max": 1.0,
+                "times": [1.0, 1.0, 1.0, 1.0],
+                "exit_codes": [0, 0, 0, 0]
+            }
+        ]
+    }"#;
+    std::fs::write(&json_path, json_content).unwrap();
+
+    hyperfine()
+        .arg("--import-json")
+        .arg(&json_path)
+        .arg("--deep-stats")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "p = 1.0000 -> no statistically significant difference",
+        ))
+        .stdout(predicate::str::contains("t = NaN").not())
+        .stdout(predicate::str::contains("significant (p < 0.01)").not());
+}
