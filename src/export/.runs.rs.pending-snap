@@ -1,9 +1,0 @@
-{"run_id":"1790286672-918718000","line":137,"new":{"module_name":"joulex__export__runs__tests","snapshot_name":"markdown_table_with_all_runs","metadata":{"source":"src/export/runs.rs","assertion_line":137,"expression":"String::from_utf8(out).unwrap()"},"snapshot":"### `sleep 0.1`\n\n| Iteration | Wall [ms] | User [ms] | System [ms] | Peak memory | Exit code |\n|---:|---:|---:|---:|---:|---:|\n| 0 | 100.0 | 1.0 | 2.0 | 1.0 MB | 0 |\n| 1 | 102.0 | 2.0 | 1.0 | 1.0 MB | 0 |\n| 2 | 98.0 | 1.0 | 2.0 | 2.0 MB | 0 |"},"old":{"module_name":"joulex__export__runs__tests","metadata":{},"snapshot":"### `sleep 0.1`\n\n| Iteration | Wall [ms] | User [ms] | System [ms] | Peak memory | Exit code |\n|---:|---:|---:|---:|---:|---:|\n| 0 | 100.0 | 1.0 | 2.0 | 1.0 MB | 0 |\n| 1 | 102.0 | 2.0 | 1.0 | 1.0 MB | 0 |\n| 2 | 98.0 | 1.0 | 2.0 | 2.1 MB | 0 |"}}
-{"run_id":"1790286698-273750000","line":137,"new":null,"old":null}
-{"run_id":"1790286727-78570000","line":137,"new":null,"old":null}
-{"run_id":"1790286750-899969971","line":137,"new":null,"old":null}
-{"run_id":"1790287311-315613000","line":137,"new":null,"old":null}
-{"run_id":"1790287342-681209000","line":137,"new":null,"old":null}
-{"run_id":"1790287384-947533421","line":137,"new":null,"old":null}
-{"run_id":"1790287530-20734000","line":137,"new":null,"old":null}
-{"run_id":"1790287571-767339549","line":137,"new":null,"old":null}
