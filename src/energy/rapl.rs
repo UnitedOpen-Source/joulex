@@ -11,15 +11,23 @@ pub struct LinuxRaplSampler {
     start_readings: Vec<u64>,
 }
 
+struct RaplDomain {
+    name: String,
+    energy_file: PathBuf,
+    max_range: u64,
+}
+
 impl LinuxRaplSampler {
     pub fn try_new() -> Option<Self> {
-        let base = Path::new("/sys/class/powercap/intel-rapl");
+        Self::try_new_at(Path::new("/sys/class/powercap/intel-rapl"))
+    }
+
+    pub fn try_new_at(base: &Path) -> Option<Self> {
         if !base.exists() {
             return None;
         }
 
-        let mut energy_files = Vec::new();
-        let mut max_energy_ranges = Vec::new();
+        let mut domains = Vec::new();
 
         // Check top-level package domains: intel-rapl:0, intel-rapl:1, etc.
         let entries = fs::read_dir(base).ok()?;
@@ -29,6 +37,7 @@ impl LinuxRaplSampler {
             if file_name.starts_with("intel-rapl:") && file_name.matches(':').count() == 1 {
                 let energy_uj_path = path.join("energy_uj");
                 let max_range_path = path.join("max_energy_range_uj");
+                let name_path = path.join("name");
 
                 if energy_uj_path.exists() {
                     // Try to read it to check permissions
@@ -39,16 +48,48 @@ impl LinuxRaplSampler {
                                 .and_then(|s| s.trim().parse::<u64>().ok())
                                 .unwrap_or(u64::MAX);
 
-                            energy_files.push(energy_uj_path);
-                            max_energy_ranges.push(max_range);
+                            let name = fs::read_to_string(&name_path)
+                                .map(|s| s.trim().to_string())
+                                .unwrap_or_default();
+
+                            domains.push(RaplDomain {
+                                name,
+                                energy_file: energy_uj_path,
+                                max_range,
+                            });
                         }
                     }
                 }
             }
         }
 
-        if energy_files.is_empty() {
+        if domains.is_empty() {
             return None;
+        }
+
+        // Domain selection strategy:
+        // 1. If any domain name starts with "package-", sum only package-* domains.
+        //    This avoids double-counting platform energy (psys) which overlaps with package energy.
+        // 2. If no package-* domain is readable but "psys" is, use "psys" alone.
+        // 3. Otherwise, use all available top-level domains.
+        let has_packages = domains.iter().any(|d| d.name.starts_with("package-"));
+        let selected: Vec<RaplDomain> = if has_packages {
+            domains
+                .into_iter()
+                .filter(|d| d.name.starts_with("package-"))
+                .collect()
+        } else if domains.iter().any(|d| d.name == "psys") {
+            domains.into_iter().filter(|d| d.name == "psys").collect()
+        } else {
+            domains
+        };
+
+        let mut energy_files = Vec::with_capacity(selected.len());
+        let mut max_energy_ranges = Vec::with_capacity(selected.len());
+
+        for domain in selected {
+            energy_files.push(domain.energy_file);
+            max_energy_ranges.push(domain.max_range);
         }
 
         Some(Self {
@@ -105,5 +146,116 @@ impl EnergySampler for LinuxRaplSampler {
 
     fn is_available(&self) -> bool {
         !self.energy_files.is_empty()
+    }
+}
+
+impl LinuxRaplSampler {
+    #[cfg(test)]
+    pub fn energy_files(&self) -> &[PathBuf] {
+        &self.energy_files
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn create_fake_rapl_domain(
+        base: &Path,
+        dir_name: &str,
+        domain_name: &str,
+        energy_uj: u64,
+        max_range_uj: Option<u64>,
+    ) -> PathBuf {
+        let domain_dir = base.join(dir_name);
+        fs::create_dir_all(&domain_dir).unwrap();
+        fs::write(domain_dir.join("name"), format!("{domain_name}\n")).unwrap();
+        fs::write(domain_dir.join("energy_uj"), format!("{energy_uj}\n")).unwrap();
+        if let Some(max_range) = max_range_uj {
+            fs::write(
+                domain_dir.join("max_energy_range_uj"),
+                format!("{max_range}\n"),
+            )
+            .unwrap();
+        }
+        domain_dir
+    }
+
+    #[test]
+    fn test_rapl_skips_psys_when_package_present() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+
+        let pkg0 = create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 1_000_000, None);
+        let _psys = create_fake_rapl_domain(base, "intel-rapl:1", "psys", 2_500_000, None);
+
+        let mut sampler = LinuxRaplSampler::try_new_at(base).expect("sampler should be created");
+        assert_eq!(sampler.energy_files().len(), 1);
+        assert_eq!(sampler.energy_files()[0], pkg0.join("energy_uj"));
+
+        sampler.start();
+        fs::write(pkg0.join("energy_uj"), "2000000\n").unwrap();
+        // psys changed too, but should be ignored
+        fs::write(_psys.join("energy_uj"), "5000000\n").unwrap();
+
+        let energy = sampler.stop().expect("should return energy");
+        assert!((energy - 1.0).abs() < 1e-6); // 1,000,000 uJ = 1.0 J
+    }
+
+    #[test]
+    fn test_rapl_sums_multiple_packages() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+
+        let pkg0 = create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 1_000_000, None);
+        let pkg1 = create_fake_rapl_domain(base, "intel-rapl:1", "package-1", 2_000_000, None);
+        let _psys = create_fake_rapl_domain(base, "intel-rapl:2", "psys", 10_000_000, None);
+
+        let mut sampler = LinuxRaplSampler::try_new_at(base).expect("sampler should be created");
+        assert_eq!(sampler.energy_files().len(), 2);
+
+        sampler.start();
+        fs::write(pkg0.join("energy_uj"), "2000000\n").unwrap(); // +1.0 J
+        fs::write(pkg1.join("energy_uj"), "3500000\n").unwrap(); // +1.5 J
+
+        let energy = sampler.stop().expect("should return energy");
+        assert!((energy - 2.5).abs() < 1e-6); // 1.0 + 1.5 = 2.5 J
+    }
+
+    #[test]
+    fn test_rapl_uses_psys_when_no_packages() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+
+        let psys = create_fake_rapl_domain(base, "intel-rapl:0", "psys", 1_000_000, None);
+
+        let mut sampler = LinuxRaplSampler::try_new_at(base).expect("sampler should be created");
+        assert_eq!(sampler.energy_files().len(), 1);
+        assert_eq!(sampler.energy_files()[0], psys.join("energy_uj"));
+
+        sampler.start();
+        fs::write(psys.join("energy_uj"), "2500000\n").unwrap();
+
+        let energy = sampler.stop().expect("should return energy");
+        assert!((energy - 1.5).abs() < 1e-6); // 1.5 J
+    }
+
+    #[test]
+    fn test_rapl_counter_wraparound() {
+        let dir = tempdir().unwrap();
+        let base = dir.path();
+
+        let pkg0 =
+            create_fake_rapl_domain(base, "intel-rapl:0", "package-0", 900_000, Some(1_000_000));
+
+        let mut sampler = LinuxRaplSampler::try_new_at(base).expect("sampler should be created");
+        sampler.start();
+        // Wraps around past max range 1_000_000 to 200_000:
+        // diff = (1_000_000 - 900_000) + 200_000 = 300_000 uJ = 0.3 J
+        fs::write(pkg0.join("energy_uj"), "200000\n").unwrap();
+
+        let energy = sampler.stop().expect("should return energy");
+        assert!((energy - 0.3).abs() < 1e-6);
     }
 }
