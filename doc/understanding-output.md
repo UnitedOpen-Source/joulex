@@ -81,12 +81,12 @@ Summary
 
 | Option | Runs | Timed? |
 |---|---|---|
-| `-s`, `--setup CMD` | once **before all runs** of a benchmark (after the parameters are substituted) | no |
+| `-s`, `--setup CMD` | once **before all runs** of a benchmark (after the parameters are substituted); give it once for all commands or once per command | no |
 | `-w`, `--warmup N` | N untimed runs of the command | no |
 | `-p`, `--prepare CMD` (alias `--before`) | before **each** run (warmup and timed) | no |
 | the command | each timed run | **yes** |
 | `-C`, `--conclude CMD` (alias `--after`) | after **each** run | no |
-| `-c`, `--cleanup CMD` | once **after all runs** of a benchmark | no |
+| `-c`, `--cleanup CMD` | once **after all runs** of a benchmark; once for all commands or once per command | no |
 
 `JOULEX_ITERATION` (and `HYPERFINE_ITERATION`) is set to the run index (`0`, `1`, … or
 `warmup-0`, …) for the command, `--prepare` and `--conclude`. The same value is available as
