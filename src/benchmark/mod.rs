@@ -517,13 +517,15 @@ impl<'a> Benchmark<'a> {
                 > 0,
         };
 
-        if scores[0] > OUTLIER_THRESHOLD {
-            warnings.push(Warnings::SlowInitialRun(
-                times_real[0],
-                outlier_warning_options,
-            ));
-        } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
-            warnings.push(Warnings::OutliersDetected(outlier_warning_options));
+        if !self.options.suppress_outlier_warnings {
+            if scores[0] > OUTLIER_THRESHOLD {
+                warnings.push(Warnings::SlowInitialRun(
+                    times_real[0],
+                    outlier_warning_options,
+                ));
+            } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
+                warnings.push(Warnings::OutliersDetected(outlier_warning_options));
+            }
         }
 
         if !warnings.is_empty() {

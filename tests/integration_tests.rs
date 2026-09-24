@@ -938,6 +938,18 @@ fn exports_detailed_user_and_system_times_in_json() {
     assert!(contents.contains("\"system_times\": ["));
 }
 
+#[test]
+fn suppresses_outlier_warnings_flag() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--suppress-outlier-warnings")
+        .arg("echo test_suppress")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("Statistical outliers").not())
+        .stderr(predicate::str::contains("initial run was unusually slow").not());
+}
+
 
 
 
