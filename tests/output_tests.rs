@@ -44,3 +44,32 @@ fn percentiles_are_not_shown_without_deep_stats() {
         .success()
         .stdout(predicate::str::contains("Percentiles").not());
 }
+
+#[test]
+fn summary_shows_absolute_means_and_differences() {
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--style=basic")
+        .arg("sleep 2")
+        .arg("sleep 1")
+        .arg("sleep 0.5")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "sleep 0.5 ran\n    2.00 ± 0.00 times faster than sleep 1 (1.000 s, +0.500 s)\n    4.00 ± 0.00 times faster than sleep 2 (2.000 s, +1.500 s)",
+        ));
+}
+
+#[test]
+fn summary_differences_are_negative_for_commands_faster_than_the_reference() {
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--style=basic")
+        .arg("--reference=sleep 2")
+        .arg("sleep 1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "2.00 ± 0.00 times slower than sleep 1 (1.000 s, −1.000 s)",
+        ));
+}
