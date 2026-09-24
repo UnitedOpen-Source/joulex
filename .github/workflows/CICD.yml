@@ -13,6 +13,11 @@ on:
     tags:
       - '*'
 
+# Least privilege by default: every job only gets read access to the
+# repository contents unless it explicitly asks for more.
+permissions:
+  contents: read
+
 jobs:
   crate_metadata:
     name: Extract crate metadata
@@ -74,6 +79,9 @@ jobs:
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
     needs: crate_metadata
+    permissions:
+      # Required by softprops/action-gh-release to upload release assets on tags
+      contents: write
     strategy:
       fail-fast: false
       matrix:
