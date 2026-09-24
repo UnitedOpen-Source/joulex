@@ -1783,3 +1783,17 @@ fn iteration_placeholder_is_expanded_in_prepare() {
         .stdout(predicate::str::contains("prep-0"))
         .stdout(predicate::str::contains("prep-1"));
 }
+
+#[test]
+fn deep_stats_terminal_output_respects_time_unit_and_shows_stddev() {
+    hyperfine_debug()
+        .arg("--deep-stats")
+        .arg("--time-unit=millisecond")
+        .arg("-r=5")
+        .arg("sleep 0.05")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Bootstrap 95% CI:"))
+        .stdout(predicate::str::contains("ms"))
+        .stdout(predicate::str::contains("σ:"));
+}

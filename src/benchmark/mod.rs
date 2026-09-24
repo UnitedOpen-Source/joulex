@@ -489,11 +489,13 @@ impl<'a> BenchmarkRunner<'a> {
             if self.options.deep_stats {
                 if let Some(deep) = compute_deep_stats(&self.times_real) {
                     println!(
-                        "  Bootstrap 95% CI:   [mean: {:.4}s … {:.4}s, median: {:.4}s … {:.4}s]",
-                        deep.mean_ci_lower,
-                        deep.mean_ci_upper,
-                        deep.median_ci_lower,
-                        deep.median_ci_upper
+                        "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                        format_duration(deep.mean_ci_lower, Some(time_unit)),
+                        format_duration(deep.mean_ci_upper, Some(time_unit)),
+                        format_duration(deep.median_ci_lower, Some(time_unit)),
+                        format_duration(deep.median_ci_upper, Some(time_unit)),
+                        format_duration(deep.std_dev_ci_lower, Some(time_unit)),
+                        format_duration(deep.std_dev_ci_upper, Some(time_unit))
                     );
                 }
             }
