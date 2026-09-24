@@ -1,9 +1,11 @@
 use std::ffi::OsString;
 
 use clap::{
-    builder::NonEmptyStringValueParser, crate_version, Arg, ArgAction, ArgMatches, Command,
-    ValueHint,
+    builder::{NonEmptyStringValueParser, PossibleValuesParser},
+    crate_version, Arg, ArgAction, ArgMatches, Command, ValueHint,
 };
+
+pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
 
 pub fn get_cli_arguments<'a, I, T>(args: I) -> ArgMatches
 where
@@ -15,7 +17,7 @@ where
 }
 
 /// Build the clap command for parsing command line arguments
-fn build_command() -> Command {
+pub fn build_command() -> Command {
     Command::new("joulex")
         .version(crate_version!())
         .next_line_help(true)
@@ -30,7 +32,7 @@ fn build_command() -> Command {
                        The latter is only available if the shell is not explicitly disabled via \
                        '--shell=none'. If multiple commands are given, hyperfine will show a \
                        comparison of the respective runtimes.")
-                .required(true)
+                .required_unless_present("generate-completions")
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
@@ -237,6 +239,14 @@ fn build_command() -> Command {
                        a comma-separated list of exit codes to ignore (e.g., --ignore-failure=1,2)."),
         )
         .arg(
+            Arg::new("filter-failed")
+                .long("filter-failed")
+                .action(ArgAction::SetTrue)
+                .help("Exclude results with non-zero exit codes from the relative speed \
+                       comparison and from exported results. This is useful when using \
+                       '--ignore-failure' with parameter scans where some combinations fail."),
+        )
+        .arg(
             Arg::new("style")
                 .long("style")
                 .action(ArgAction::Set)
@@ -291,6 +301,29 @@ fn build_command() -> Command {
                 .help("Set the time unit to be used. Possible values: microsecond, millisecond, second. \
                        If the option is not given, the time unit is determined automatically. \
                        This option affects the standard output as well as all export formats except for CSV and JSON."),
+        )
+        .arg(
+            Arg::new("export")
+                .long("export")
+                .short('e')
+                .action(ArgAction::Append)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help(
+                    "Export timing results to the given FILE.
+                     \n\
+                     Supported formats:\n\
+                     .json     Includes summary and individual run timings (in seconds).\n\
+                     .csv      Summary only (in seconds).\n\
+                     .md       Markdown table.\n\
+                     .adoc     AsciiDoc table.\n\
+                     .org      Org-mode table.\n\
+                     \n\
+                     Notes:\n\
+                     - Repeat --export to generate multiple formats.\n\
+                     - Except for JSON and CSV, the output time unit can be changed using '--time-unit' option.\n\
+                     - Defaults to JSON for unsupported or missing file extensions."
+                ),
         )
         .arg(
             Arg::new("export-asciidoc")
@@ -418,6 +451,14 @@ fn build_command() -> Command {
             .action(ArgAction::SetTrue)
             .hide(true)
             .help("Enable debug mode which does not actually run commands, but returns fake times when the command is 'sleep <time>'.")
+        )
+        .arg(
+            Arg::new("generate-completions")
+                .long("generate-completions")
+                .action(ArgAction::Set)
+                .value_name("SHELL")
+                .value_parser(PossibleValuesParser::new(SHELLS))
+                .help("Generate a shell completions script for the given shell and print it to stdout.")
         )
 }
 

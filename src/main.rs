@@ -6,7 +6,8 @@
 use std::env;
 
 use benchmark::scheduler::Scheduler;
-use cli::get_cli_arguments;
+use clap_complete::Shell;
+use cli::{build_command, get_cli_arguments};
 use command::Commands;
 use export::ExportManager;
 use options::Options;
@@ -28,12 +29,31 @@ pub mod stats;
 pub mod timer;
 pub mod util;
 
+fn parse_shell(name: &str) -> Result<Shell> {
+    match name {
+        "bash" => Ok(Shell::Bash),
+        "zsh" => Ok(Shell::Zsh),
+        "fish" => Ok(Shell::Fish),
+        "powershell" => Ok(Shell::PowerShell),
+        "elvish" => Ok(Shell::Elvish),
+        other => Err(anyhow::anyhow!("unsupported shell: {other}")),
+    }
+}
+
 fn run() -> Result<()> {
     // Enabled ANSI colors on Windows 10
     #[cfg(windows)]
     colored::control::set_virtual_terminal(true).unwrap();
 
     let cli_arguments = get_cli_arguments(env::args_os());
+
+    if let Some(shell) = cli_arguments.get_one::<String>("generate-completions") {
+        let shell = parse_shell(shell)?;
+        let mut command = build_command();
+        clap_complete::generate(shell, &mut command, "joulex", &mut std::io::stdout());
+        return Ok(());
+    }
+
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
     let commands = Commands::from_cli_arguments(&cli_arguments)?;
     let export_manager = ExportManager::from_cli_arguments(

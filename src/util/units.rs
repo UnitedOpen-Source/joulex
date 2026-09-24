@@ -33,6 +33,24 @@ impl Unit {
     }
 }
 
+/// Format a byte count into a human-readable string (B, KB, MB, GB).
+pub fn format_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * 1024.0;
+    const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+    let b = bytes as f64;
+    if b >= GB {
+        format!("{:.2} GB", b / GB)
+    } else if b >= MB {
+        format!("{:.1} MB", b / MB)
+    } else if b >= KB {
+        format!("{:.1} KB", b / KB)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 #[test]
 fn test_unit_short_name() {
     assert_eq!("s", Unit::Second.short_name());
@@ -48,4 +66,12 @@ fn test_unit_format() {
     assert_eq!("123456.8", Unit::MilliSecond.format(value));
 
     assert_eq!("1234.6", Unit::MicroSecond.format(0.00123456));
+}
+
+#[test]
+fn test_format_bytes() {
+    assert_eq!("512 B", format_bytes(512));
+    assert_eq!("1.5 KB", format_bytes(1536));
+    assert_eq!("20.0 MB", format_bytes(20 * 1024 * 1024));
+    assert_eq!("1.50 GB", format_bytes((1.5 * 1024.0 * 1024.0 * 1024.0) as u64));
 }

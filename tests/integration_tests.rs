@@ -722,3 +722,98 @@ fn windows_quote_before_quote_args() {
         .assert()
         .success();
 }
+
+#[test]
+fn fails_with_zero_runs() {
+    hyperfine()
+        .arg("--runs=0")
+        .arg("echo a")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "At least one run has to be performed. Please specify a value larger than zero for '--runs'",
+        ));
+
+    hyperfine()
+        .arg("--max-runs=0")
+        .arg("echo a")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "At least one run has to be performed. Please specify a value larger than zero for '--max-runs'",
+        ));
+}
+
+#[test]
+fn can_generate_shell_completions() {
+    hyperfine()
+        .arg("--generate-completions=bash")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("complete -F _joulex"));
+
+    hyperfine()
+        .arg("--generate-completions=zsh")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("compdef _joulex joulex"));
+}
+
+#[test]
+fn can_export_unified() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.csv");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--export")
+        .arg(&export_path)
+        .arg("echo test")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    assert!(contents.contains("command,mean,stddev,median,user,system,min,max"));
+    assert!(contents.contains("echo test"));
+}
+
+#[test]
+#[cfg(unix)]
+fn filter_failed_commands() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--ignore-failure")
+        .arg("--filter-failed")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("echo success")
+        .arg("false")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    assert!(contents.contains("echo success"));
+    assert!(!contents.contains("\"false\""));
+}
+
+#[test]
+#[cfg(unix)]
+fn iteration_env_var_forwarded() {
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--prepare=echo prep-$JOULEX_ITERATION")
+        .arg("--show-output")
+        .arg("echo run-$JOULEX_ITERATION")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prep-0"))
+        .stdout(predicate::str::contains("run-0"));
+}
+

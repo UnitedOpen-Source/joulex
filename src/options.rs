@@ -252,6 +252,9 @@ pub struct Options {
 
     /// Calculate deep statistics (confidence intervals, bootstrapping)
     pub deep_stats: bool,
+
+    /// Whether to exclude results with non-zero exit codes from comparisons and exports
+    pub filter_failed: bool,
 }
 
 impl Default for Options {
@@ -276,6 +279,7 @@ impl Default for Options {
             command_input_policy: CommandInputPolicy::Null,
             measure_energy: false,
             deep_stats: false,
+            filter_failed: false,
         }
     }
 }
@@ -299,8 +303,13 @@ impl Options {
         let mut max_runs = param_to_u64("max-runs")?;
 
         if let Some(runs) = param_to_u64("runs")? {
+            if runs == 0 {
+                return Err(OptionsError::ZeroRuns("runs"));
+            }
             min_runs = Some(runs);
             max_runs = Some(runs);
+        } else if max_runs == Some(0) {
+            return Err(OptionsError::ZeroRuns("max-runs"));
         }
 
         match (min_runs, max_runs) {
@@ -474,6 +483,7 @@ impl Options {
 
         options.measure_energy = matches.get_flag("energy");
         options.deep_stats = matches.get_flag("deep-stats");
+        options.filter_failed = matches.get_flag("filter-failed");
 
         Ok(options)
     }

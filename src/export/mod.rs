@@ -1,5 +1,7 @@
+use std::ffi::OsStr;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::path::Path;
 
 mod asciidoc;
 mod csv;
@@ -83,6 +85,14 @@ impl ExportManager {
             time_unit,
             sort_order,
         };
+
+        if let Some(args) = matches.get_many::<String>("export") {
+            for filename in args {
+                let export_type = get_export_type_from_filename(filename);
+                export_manager.add_exporter(export_type, filename)?;
+            }
+        }
+
         {
             let mut add_exporter = |flag, exporttype| -> Result<()> {
                 if let Some(filename) = matches.get_one::<String>(flag) {
@@ -138,9 +148,7 @@ impl ExportManager {
 
             match e.target {
                 ExportTarget::File(ref filename) => {
-                    if intermediate {
-                        write_to_file(filename, &content()?)?
-                    }
+                    write_to_file(filename, &content()?)?;
                 }
                 ExportTarget::Stdout => {
                     if !intermediate {
@@ -156,7 +164,26 @@ impl ExportManager {
 
 /// Write the given content to a file with the specified name
 fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
-    let mut file = OpenOptions::new().write(true).open(filename)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(filename)?;
     file.write_all(content)
         .with_context(|| format!("Failed to export results to '{filename}'"))
+}
+
+/// Determine the export-type from the file extension. Defaults to JSON.
+fn get_export_type_from_filename(filename: &str) -> ExportType {
+    match Path::new(filename)
+        .extension()
+        .and_then(OsStr::to_str)
+        .map(|s| s.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("adoc" | "asciidoc") => ExportType::Asciidoc,
+        Some("csv") => ExportType::Csv,
+        Some("md" | "markdown") => ExportType::Markdown,
+        Some("org") => ExportType::Orgmode,
+        Some("json") | _ => ExportType::Json,
+    }
 }

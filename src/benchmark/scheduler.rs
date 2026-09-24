@@ -52,7 +52,12 @@ impl<'a> Scheduler<'a> {
 
             // We export results after each individual benchmark, because
             // we would risk losing them if a later benchmark fails.
-            self.export_manager.write_results(&self.results, true)?;
+            let intermediate_results: Vec<_> = if self.options.filter_failed {
+                self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+            } else {
+                self.results.clone()
+            };
+            self.export_manager.write_results(&intermediate_results, true)?;
         }
 
         Ok(())
@@ -63,19 +68,33 @@ impl<'a> Scheduler<'a> {
             return;
         }
 
-        if self.results.len() < 2 {
+        let results: Vec<_> = if self.options.filter_failed {
+            self.results.iter().filter(|r| !r.has_failure()).collect()
+        } else {
+            self.results.iter().collect()
+        };
+
+        if results.len() < 2 {
             return;
         }
 
-        let reference = self
-            .options
-            .reference_command
-            .as_ref()
-            .map(|_| &self.results[0])
-            .unwrap_or_else(|| relative_speed::fastest_of(&self.results));
+        let results_slice: Vec<_> = results.iter().map(|r| (*r).clone()).collect();
+
+        let reference = if self.options.reference_command.is_some() {
+            // When a reference command is set, it's always the first result.
+            // If it was filtered out, fall back to the fastest remaining result.
+            let ref_cmd = &self.results[0];
+            if self.options.filter_failed && ref_cmd.has_failure() {
+                relative_speed::fastest_of(&results_slice)
+            } else {
+                &results_slice[0]
+            }
+        } else {
+            relative_speed::fastest_of(&results_slice)
+        };
 
         if let Some(annotated_results) = relative_speed::compute_with_check_from_reference(
-            &self.results,
+            &results_slice,
             reference,
             self.options.sort_order_speed_comparison,
         ) {
@@ -119,6 +138,28 @@ impl<'a> Scheduler<'a> {
                             comparator,
                             &item.result.command_with_unused_parameters.magenta()
                         );
+
+                        if self.options.deep_stats {
+                            if let (Some(ref_times), Some(item_times)) =
+                                (&reference.result.times, &item.result.times)
+                            {
+                                if let Some(cmp) =
+                                    crate::stats::deep::compare_samples(ref_times, item_times)
+                                {
+                                    let sig_str = if cmp.is_significant_01 {
+                                        "statistically significant (p < 0.01)".cyan()
+                                    } else if cmp.is_significant_05 {
+                                        "statistically significant (p < 0.05)".cyan()
+                                    } else {
+                                        "no statistically significant difference (p ≥ 0.05)".dimmed()
+                                    };
+                                    println!(
+                                        "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
+                                        cmp.t_statistic, cmp.p_value, sig_str
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
                 SortOrder::Command => {
@@ -144,17 +185,22 @@ impl<'a> Scheduler<'a> {
             eprintln!(
                 "{}: The benchmark comparison could not be computed as some benchmark times are zero. \
                  This could be caused by background interference during the initial calibration phase \
-                 of hyperfine, in combination with very fast commands (faster than a few milliseconds). \
+                 of joulex, in combination with very fast commands (faster than a few milliseconds). \
                  Try to re-run the benchmark on a quiet system. If you did not do so already, try the \
                  --shell=none/-N option. If it does not help either, you command is most likely too fast \
-                 to be accurately benchmarked by hyperfine.",
+                 to be accurately benchmarked by joulex.",
                  "Note".bold().red()
             );
         }
     }
 
     pub fn final_export(&self) -> Result<()> {
-        self.export_manager.write_results(&self.results, false)
+        let results: Vec<_> = if self.options.filter_failed {
+            self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+        } else {
+            self.results.clone()
+        };
+        self.export_manager.write_results(&results, false)
     }
 }
 
