@@ -34,6 +34,7 @@ jobs:
             "version=" + .version,
             "maintainer=" + (.authors[0] // ""),
             "homepage=" + (.homepage // ""),
+            "description=" + (.description // ""),
             "msrv=" + (.rust_version // ""),
             "bin-name=" + ( (.targets[] | select(.kind[0] == "bin") | .name) // .name )
           ] |
@@ -44,6 +45,7 @@ jobs:
       version: ${{ steps.crate_metadata.outputs.version }}
       maintainer: ${{ steps.crate_metadata.outputs.maintainer }}
       homepage: ${{ steps.crate_metadata.outputs.homepage }}
+      description: ${{ steps.crate_metadata.outputs.description }}
       msrv: ${{ steps.crate_metadata.outputs.msrv }}
       bin-name: ${{ steps.crate_metadata.outputs.bin-name }}
 
@@ -313,7 +315,7 @@ jobs:
         Architecture: ${DPKG_ARCH}
         Provides: ${{ needs.crate_metadata.outputs.name }}
         Conflicts: ${DPKG_CONFLICTS}
-        Description: A command-line benchmarking tool
+        Description: ${{ needs.crate_metadata.outputs.description }}
         EOF
 
         DPKG_PATH="${DPKG_STAGING}/${DPKG_NAME}"
