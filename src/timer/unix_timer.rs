@@ -1,6 +1,7 @@
 #![cfg(not(windows))]
 
 use std::convert::TryFrom;
+use std::io;
 use std::mem;
 
 use crate::timer::CPUTimes;
@@ -20,33 +21,36 @@ pub struct CPUTimer {
 }
 
 impl CPUTimer {
-    pub fn start() -> Self {
-        CPUTimer {
-            start_cpu: get_cpu_times(),
-        }
+    pub fn start() -> io::Result<Self> {
+        Ok(CPUTimer {
+            start_cpu: get_cpu_times()?,
+        })
     }
 
-    pub fn stop(&self) -> (Second, Second, u64) {
-        let end_cpu = get_cpu_times();
+    pub fn stop(&self) -> io::Result<(Second, Second, u64)> {
+        let end_cpu = get_cpu_times()?;
         let cpu_interval = cpu_time_interval(&self.start_cpu, &end_cpu);
-        (
+        Ok((
             cpu_interval.user,
             cpu_interval.system,
             end_cpu.memory_usage_byte,
-        )
+        ))
     }
 }
 
 /// Read CPU execution times ('user' and 'system')
-fn get_cpu_times() -> CPUTimes {
+fn get_cpu_times() -> io::Result<CPUTimes> {
     use libc::{getrusage, rusage, RUSAGE_CHILDREN};
 
-    let result: rusage = unsafe {
-        let mut buf = mem::zeroed();
-        let success = getrusage(RUSAGE_CHILDREN, &mut buf);
-        assert_eq!(0, success);
-        buf
-    };
+    // SAFETY: `rusage` is a plain C struct of integers, so the all-zero bit
+    // pattern is a valid value.
+    let mut result: rusage = unsafe { mem::zeroed() };
+
+    // SAFETY: `result` is a valid, exclusively borrowed `rusage` that
+    // getrusage fills in; RUSAGE_CHILDREN is a valid `who` argument.
+    if unsafe { getrusage(RUSAGE_CHILDREN, &mut result) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
 
     const MICROSEC_PER_SEC: i64 = 1000 * 1000;
 
@@ -58,13 +62,13 @@ fn get_cpu_times() -> CPUTimes {
     };
 
     #[allow(clippy::useless_conversion)]
-    CPUTimes {
+    Ok(CPUTimes {
         user_usec: i64::from(result.ru_utime.tv_sec) * MICROSEC_PER_SEC
             + i64::from(result.ru_utime.tv_usec),
         system_usec: i64::from(result.ru_stime.tv_sec) * MICROSEC_PER_SEC
             + i64::from(result.ru_stime.tv_usec),
         memory_usage_byte: u64::try_from(max_rss_byte).unwrap_or(0),
-    }
+    })
 }
 
 /// Compute the time intervals in between two `CPUTimes` snapshots
@@ -103,4 +107,11 @@ fn test_cpu_time_interval() {
     let t_ba = cpu_time_interval(&t_b, &t_a);
     assert_relative_eq!(-0.007655, t_ba.user);
     assert_relative_eq!(-0.015679, t_ba.system);
+}
+
+#[test]
+fn test_get_cpu_times_succeeds() {
+    let t = get_cpu_times().expect("getrusage(RUSAGE_CHILDREN) should succeed");
+    assert!(t.user_usec >= 0);
+    assert!(t.system_usec >= 0);
 }

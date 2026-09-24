@@ -1,4 +1,3 @@
-#![cfg(windows)]
 #![warn(unsafe_op_in_unsafe_fn)]
 
 use std::{mem, os::windows::io::AsRawHandle, process, ptr};
@@ -33,11 +32,11 @@ const HUNDRED_NS_PER_MS: i64 = 10;
 
 #[cfg(not(feature = "windows_process_extensions_main_thread_handle"))]
 #[allow(non_upper_case_globals)]
-static NtResumeProcess: Lazy<unsafe extern "system" fn(ProcessHandle: HANDLE) -> NTSTATUS> =
+static NtResumeProcess: Lazy<unsafe extern "system" fn(process_handle: HANDLE) -> NTSTATUS> =
     Lazy::new(|| {
         // SAFETY: Getting the module handle for ntdll.dll is safe
         let ntdll = unsafe { GetModuleHandleW(w!("ntdll.dll")) };
-        assert!(ntdll != std::ptr::null_mut(), "GetModuleHandleW failed");
+        assert!(!ntdll.is_null(), "GetModuleHandleW failed");
 
         // SAFETY: The ntdll handle is valid
         let nt_resume_process = unsafe { GetProcAddress(ntdll, s!("NtResumeProcess")) };
@@ -51,15 +50,20 @@ pub struct CPUTimer {
 }
 
 impl CPUTimer {
+    /// Assign `child` to a new job object (for CPU accounting) and resume it.
+    ///
+    /// # Safety
+    ///
+    /// `child` must have been spawned with `CREATE_SUSPENDED` and must not have
+    /// been resumed yet. Otherwise the CPU time it used before being assigned to
+    /// the job object is not accounted, and resuming it again changes its
+    /// suspend count unexpectedly.
     pub unsafe fn start_suspended_process(child: &process::Child) -> Self {
         let child_handle = child.as_raw_handle() as HANDLE;
 
         // SAFETY: Creating a new job object is safe
         let job_object = unsafe { CreateJobObjectW(ptr::null_mut(), ptr::null_mut()) };
-        assert!(
-            job_object != std::ptr::null_mut(),
-            "CreateJobObjectW failed"
-        );
+        assert!(!job_object.is_null(), "CreateJobObjectW failed");
 
         // SAFETY: The job object handle is valid
         let ret = unsafe { AssignProcessToJobObject(job_object, child_handle) };

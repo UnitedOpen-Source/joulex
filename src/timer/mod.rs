@@ -82,7 +82,7 @@ fn discard(output: ChildStdout) {
 /// Execute the given command and return a timing summary
 pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
     #[cfg(not(windows))]
-    let cpu_timer = self::unix_timer::CPUTimer::start();
+    let cpu_timer = self::unix_timer::CPUTimer::start()?;
 
     #[cfg(windows)]
     {
@@ -109,6 +109,9 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
     let status = child.wait()?;
 
     let time_real = wallclock_timer.stop();
+    #[cfg(not(windows))]
+    let (time_user, time_system, memory_usage_byte) = cpu_timer.stop()?;
+    #[cfg(windows)]
     let (time_user, time_system, memory_usage_byte) = cpu_timer.stop();
 
     Ok(TimerResult {

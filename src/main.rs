@@ -2,6 +2,7 @@
     all(windows, feature = "windows_process_extensions_main_thread_handle"),
     feature(windows_process_extensions_main_thread_handle)
 )]
+#![warn(clippy::undocumented_unsafe_blocks)]
 
 use std::env;
 
