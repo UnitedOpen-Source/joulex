@@ -1748,3 +1748,38 @@ fn schedule_sequential_is_rejected() {
             "invalid value 'sequential' for '--schedule <MODE>'",
         ));
 }
+
+#[cfg(unix)]
+#[test]
+fn iteration_placeholder_works_without_a_shell() {
+    hyperfine()
+        .arg("--shell=none")
+        .arg("--warmup=1")
+        .arg("--runs=3")
+        .arg("--show-output")
+        .arg("echo run-{iteration}")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("run-warmup-0"))
+        .stdout(predicate::str::contains("run-0"))
+        .stdout(predicate::str::contains("run-2"))
+        // the header shows the template, but no run prints it unexpanded
+        .stdout(predicate::str::contains(
+            "Benchmark 1: echo run-{iteration}",
+        ))
+        .stdout(predicate::str::contains("\nrun-{iteration}\n").not());
+}
+
+#[cfg(unix)]
+#[test]
+fn iteration_placeholder_is_expanded_in_prepare() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--prepare=echo prep-{iteration}")
+        .arg("--show-output")
+        .arg("true")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("prep-0"))
+        .stdout(predicate::str::contains("prep-1"));
+}
