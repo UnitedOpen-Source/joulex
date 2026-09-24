@@ -16,6 +16,11 @@ pub fn geometric_mean(xs: &[f64]) -> Option<f64> {
     if xs.is_empty() || xs.iter().any(|&x| x <= 0.0 || !x.is_finite()) {
         return None;
     }
+    // Exact for constant samples (exp(ln(x)) can be off in the last bit,
+    // differently on different platforms' libm)
+    if xs.iter().all(|&x| x == xs[0]) {
+        return Some(xs[0]);
+    }
     Some((xs.iter().map(|x| x.ln()).sum::<f64>() / xs.len() as f64).exp())
 }
 
@@ -51,7 +56,7 @@ mod tests {
     #[test]
     fn geometric_mean_of_positive_values() {
         assert_relative_eq!(geometric_mean(&[1.0, 4.0]).unwrap(), 2.0);
-        assert_relative_eq!(geometric_mean(&[2.0, 2.0, 2.0]).unwrap(), 2.0);
+        assert_eq!(geometric_mean(&[0.123, 0.123, 0.123]), Some(0.123));
         assert_eq!(geometric_mean(&[1.0, 0.0]), None);
         assert_eq!(geometric_mean(&[]), None);
     }

@@ -26,6 +26,15 @@ pub struct BenchmarkResult {
     /// The median run time
     pub median: Second,
 
+    /// 5th, 25th, 75th and 95th percentile of the run times (linear
+    /// interpolation between closest ranks)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub percentiles: Option<Percentiles>,
+
+    /// Geometric mean of the run times (omitted if a run took 0 s)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometric_mean: Option<Second>,
+
     /// Time spent in user mode
     pub user: Second,
 
@@ -91,6 +100,15 @@ pub struct BenchmarkResult {
     /// I/O), exported with --resource-usage on Unix
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<super::timing_result::ResourceSeries>,
+}
+
+/// Percentiles of the run times, in seconds.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct Percentiles {
+    pub p05: Second,
+    pub p25: Second,
+    pub p75: Second,
+    pub p95: Second,
 }
 
 /// Information about a benchmark run that was omitted due to failure.

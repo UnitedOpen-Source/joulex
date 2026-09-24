@@ -503,6 +503,12 @@ fn scheduler_basic() -> Result<()> {
       mean: 0.123
       stddev: 0
       median: 0.123
+      percentiles:
+        p05: 0.123
+        p25: 0.123
+        p75: 0.123
+        p95: 0.123
+      geometric_mean: 0.123
       user: 0
       system: 0
       cpu_percent: 0
@@ -527,6 +533,12 @@ fn scheduler_basic() -> Result<()> {
       mean: 0.456
       stddev: 0
       median: 0.456
+      percentiles:
+        p05: 0.456
+        p25: 0.456
+        p75: 0.456
+        p95: 0.456
+      geometric_mean: 0.456
       user: 0
       system: 0
       cpu_percent: 0
@@ -559,6 +571,12 @@ fn scheduler_round_robin() -> Result<()> {
       mean: 0.123
       stddev: 0
       median: 0.123
+      percentiles:
+        p05: 0.123
+        p25: 0.123
+        p75: 0.123
+        p95: 0.123
+      geometric_mean: 0.123
       user: 0
       system: 0
       cpu_percent: 0
@@ -583,6 +601,12 @@ fn scheduler_round_robin() -> Result<()> {
       mean: 0.456
       stddev: 0
       median: 0.456
+      percentiles:
+        p05: 0.456
+        p25: 0.456
+        p75: 0.456
+        p95: 0.456
+      geometric_mean: 0.456
       user: 0
       system: 0
       cpu_percent: 0
