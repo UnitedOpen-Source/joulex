@@ -111,14 +111,18 @@ pub fn build_command() -> Command {
             Arg::new("setup")
                 .long("setup")
                 .short('s')
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
+                .num_args(1)
                 .value_name("CMD")
                 .value_hint(ValueHint::CommandString)
                 .help(
                     "Execute CMD before each set of timing runs. This is useful for \
                      compiling your software with the provided parameters, or to do any \
                      other work that should happen once before a series of benchmark runs, \
-                     not every time as would happen with the --prepare option."
+                     not every time as would happen with the --prepare option.\n\
+                     The --setup option can be specified once for all commands or multiple times, \
+                     once for each command. In the latter case, each setup command will be \
+                     run before the corresponding benchmark command."
                 ),
         )
         .arg(
@@ -178,14 +182,17 @@ pub fn build_command() -> Command {
             Arg::new("cleanup")
                 .long("cleanup")
                 .short('c')
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
+                .num_args(1)
                 .value_name("CMD")
                 .value_hint(ValueHint::CommandString)
                 .help(
                     "Execute CMD after the completion of all benchmarking \
                      runs for each individual command to be benchmarked. \
                      This is useful if the commands to be benchmarked produce \
-                     artifacts that need to be cleaned up."
+                     artifacts that need to be cleaned up.\n\
+                     The --cleanup option can be specified once for all commands or multiple \
+                     times, once for each command."
                 ),
         )
         .arg(

@@ -141,10 +141,10 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_setup(&self) -> Result<TimingResult> {
-        let command = self.options.setup_command.as_ref().map(|setup_command| {
+        let command = self.options.setup_command.as_ref().map(|values| {
             Command::new_parametrized(
                 None,
-                setup_command,
+                per_command(values, self.number),
                 self.command.get_parameters().iter().cloned(),
             )
         });
@@ -165,17 +165,13 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_cleanup(&self) -> Result<TimingResult> {
-        let command = self
-            .options
-            .cleanup_command
-            .as_ref()
-            .map(|cleanup_command| {
-                Command::new_parametrized(
-                    None,
-                    cleanup_command,
-                    self.command.get_parameters().iter().cloned(),
-                )
-            });
+        let command = self.options.cleanup_command.as_ref().map(|values| {
+            Command::new_parametrized(
+                None,
+                per_command(values, self.number),
+                self.command.get_parameters().iter().cloned(),
+            )
+        });
 
         let error_output = "The cleanup command terminated with a non-zero exit code. \
                             Append ' || true' to the command if you are sure that this can be ignored.";
@@ -858,4 +854,14 @@ fn test_format_count() {
     assert_eq!(format_count(12.5), "12.5");
     assert_eq!(format_count(1234.0), "1.2k");
     assert_eq!(format_count(3_400_000.0), "3.4M");
+}
+
+/// The value for benchmark `number` of an option that is given either once
+/// (for all commands) or once per command, like --prepare or --setup.
+fn per_command(values: &[String], number: usize) -> &str {
+    if values.len() == 1 {
+        &values[0]
+    } else {
+        &values[number]
+    }
 }

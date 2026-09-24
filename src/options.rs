@@ -230,10 +230,10 @@ pub struct Options {
     pub conclusion_command: Option<Vec<String>>,
 
     /// Command to run before each *batch* of timing runs, i.e. before each individual benchmark
-    pub setup_command: Option<String>,
+    pub setup_command: Option<Vec<String>>,
 
     /// Command to run after each *batch* of timing runs, i.e. after each individual benchmark
-    pub cleanup_command: Option<String>,
+    pub cleanup_command: Option<Vec<String>>,
 
     /// What color mode to use for the terminal output
     pub output_style: OutputStyleOption,
@@ -368,7 +368,9 @@ impl Options {
             (None, None) => {}
         };
 
-        options.setup_command = matches.get_one::<String>("setup").map(String::from);
+        options.setup_command = matches
+            .get_many::<String>("setup")
+            .map(|values| values.map(String::from).collect::<Vec<String>>());
 
         options.reference_command = matches.get_one::<String>("reference").map(String::from);
         options.reference_name = matches
@@ -383,7 +385,9 @@ impl Options {
             .get_many::<String>("conclude")
             .map(|values| values.map(String::from).collect::<Vec<String>>());
 
-        options.cleanup_command = matches.get_one::<String>("cleanup").map(String::from);
+        options.cleanup_command = matches
+            .get_many::<String>("cleanup")
+            .map(|values| values.map(String::from).collect::<Vec<String>>());
 
         options.command_output_policies = if matches.get_flag("show-output") {
             vec![CommandOutputPolicy::Inherit]
@@ -574,28 +578,55 @@ impl Options {
         }
 
         if self.schedule == ScheduleMode::RoundRobin && !self.allow_setup_with_round_robin {
-            let setup_has_param = self.setup_command.as_ref().is_some_and(|setup| {
-                commands.iter().any(|c| {
-                    c.get_parameters()
-                        .iter()
-                        .any(|(n, _)| setup.contains(&format!("{{{n}}}")))
+            // Setup/cleanup differ between benchmarks if they contain a parameter
+            // placeholder, or if they are given per command with different values.
+            let has_param = |values: &Option<Vec<String>>| {
+                values.iter().flatten().any(|value| {
+                    commands.iter().any(|c| {
+                        c.get_parameters()
+                            .iter()
+                            .any(|(n, _)| value.contains(&format!("{{{n}}}")))
+                    })
                 })
-            });
-            let cleanup_has_param = self.cleanup_command.as_ref().is_some_and(|cleanup| {
-                commands.iter().any(|c| {
-                    c.get_parameters()
-                        .iter()
-                        .any(|(n, _)| cleanup.contains(&format!("{{{n}}}")))
-                })
-            });
-            if setup_has_param || cleanup_has_param {
+            };
+            let per_command_values_differ = |values: &Option<Vec<String>>| {
+                values
+                    .as_ref()
+                    .is_some_and(|values| values.iter().any(|v| v != &values[0]))
+            };
+            let reason = if has_param(&self.setup_command) || has_param(&self.cleanup_command) {
+                Some("due to parameter substitution")
+            } else if per_command_values_differ(&self.setup_command)
+                || per_command_values_differ(&self.cleanup_command)
+            {
+                Some("different values were given per command")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
                 bail!(
-                    "The '--setup' and/or '--cleanup' options differ between benchmarks (due to parameter substitution) \
+                    "The '--setup' and/or '--cleanup' options differ between benchmarks ({reason}) \
                      and cannot be combined with '--schedule round-robin'. \
                      Setup runs once per benchmark batch, but round-robin interleaves runs across benchmarks. \
                      Use '--prepare' for per-run state, or use the default grouped schedule."
                 );
             }
+        }
+
+        if let Some(setup_command) = &self.setup_command {
+            ensure!(
+                setup_command.len() <= 1 || num_commands == setup_command.len(),
+                "The '--setup' option has to be provided just once or N times, where N={num_commands} is the \
+                 number of benchmark commands (including a potential reference)."
+            );
+        }
+
+        if let Some(cleanup_command) = &self.cleanup_command {
+            ensure!(
+                cleanup_command.len() <= 1 || num_commands == cleanup_command.len(),
+                "The '--cleanup' option has to be provided just once or N times, where N={num_commands} is the \
+                 number of benchmark commands (including a potential reference)."
+            );
         }
 
         if let Some(preparation_command) = &self.preparation_command {
