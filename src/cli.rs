@@ -561,6 +561,16 @@ pub fn build_command() -> Command {
                 .help("Generate a shell completions script for the given shell and print it to stdout.")
         )
         .arg(
+            Arg::new("resource-usage")
+                .long("resource-usage")
+                .visible_alias("rusage")
+                .action(ArgAction::SetTrue)
+                .help("Show the mean voluntary/involuntary context switches, minor/major page \
+                       faults and block I/O operations per run, and export them per run in \
+                       JSON ('resources'). Unix only. The counters include the intermediate \
+                       shell unless '--shell=none' is used."),
+        )
+        .arg(
             Arg::new("discard-outliers")
                 .long("discard-outliers")
                 .action(ArgAction::Set)

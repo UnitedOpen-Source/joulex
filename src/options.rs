@@ -277,6 +277,9 @@ pub struct Options {
     /// Modified Z-score above which runs are discarded (--discard-outliers)
     pub discard_outliers: Option<f64>,
 
+    /// Show and export OS resource counters (--resource-usage)
+    pub show_resource_usage: bool,
+
     /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
     pub allow_setup_with_round_robin: bool,
 }
@@ -308,6 +311,7 @@ impl Default for Options {
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
             discard_outliers: None,
+            show_resource_usage: false,
             allow_setup_with_round_robin: false,
         }
     }
@@ -515,6 +519,7 @@ impl Options {
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
+        options.show_resource_usage = matches.get_flag("resource-usage");
         options.discard_outliers = matches
             .get_one::<String>("discard-outliers")
             .map(|value| match value.as_str() {

@@ -51,6 +51,8 @@ pub struct BenchmarkRunner<'a> {
     pub memory_usage_byte: Vec<u64>,
     pub energy_measurements: Vec<Option<f64>>,
     pub exit_codes: Vec<Option<i32>>,
+    /// OS resource counters per run (`None` where unavailable, e.g. Windows)
+    pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     pub all_succeeded: bool,
     pub count: u64,
     pub initial_total_time: f64,
@@ -114,6 +116,7 @@ impl<'a> BenchmarkRunner<'a> {
             memory_usage_byte: vec![],
             energy_measurements: vec![],
             exit_codes: vec![],
+            resource_counters: vec![],
             all_succeeded: true,
             count: 0,
             initial_total_time: 0.0,
@@ -272,6 +275,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte.push(res.memory_usage_byte);
         self.energy_measurements.push(energy_initial);
         self.exit_codes.push(extract_exit_code(status));
+        self.resource_counters.push(res.counters);
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -298,11 +302,38 @@ impl<'a> BenchmarkRunner<'a> {
         self.memory_usage_byte.push(res.memory_usage_byte);
         self.energy_measurements.push(energy);
         self.exit_codes.push(extract_exit_code(status));
+        self.resource_counters.push(res.counters);
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
 
         Ok(())
+    }
+
+    /// Resource counters of all runs, if every run has them.
+    fn all_resource_counters(&self) -> Option<Vec<timing_result::ResourceCounters>> {
+        if self.resource_counters.is_empty() {
+            return None;
+        }
+        self.resource_counters.iter().copied().collect()
+    }
+
+    /// "ctx-sw 3 vol / 12 invol · faults 1.2k minor / 0 major · I/O 0 in / 0 out blocks"
+    fn resource_summary(&self) -> Option<String> {
+        let counters = self.all_resource_counters()?;
+        let mean_of = |f: fn(&timing_result::ResourceCounters) -> u64| {
+            let values: Vec<f64> = counters.iter().map(|c| f(c) as f64).collect();
+            format_count(mean(&values))
+        };
+        Some(format!(
+            "ctx-sw {} vol / {} invol · faults {} minor / {} major · I/O {} in / {} out blocks",
+            mean_of(|c| c.voluntary_ctx_switches),
+            mean_of(|c| c.involuntary_ctx_switches),
+            mean_of(|c| c.minor_faults),
+            mean_of(|c| c.major_faults),
+            mean_of(|c| c.block_input_ops),
+            mean_of(|c| c.block_output_ops),
+        ))
     }
 
     /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
@@ -319,6 +350,7 @@ impl<'a> BenchmarkRunner<'a> {
             self.energy_measurements = select(&self.energy_measurements, keep);
         }
         self.exit_codes = select(&self.exit_codes, keep);
+        self.resource_counters = select(&self.resource_counters, keep);
     }
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
@@ -478,6 +510,16 @@ impl<'a> BenchmarkRunner<'a> {
                 );
             }
 
+            if self.options.show_resource_usage {
+                match self.resource_summary() {
+                    Some(line) => println!("  Resources (mean):   {}", line.dimmed()),
+                    None => println!(
+                        "  Resources:          {}",
+                        "not available (Unix only)".dimmed()
+                    ),
+                }
+            }
+
             if self.options.measure_energy {
                 let valid_energy: Vec<f64> =
                     self.energy_measurements.iter().filter_map(|&e| e).collect();
@@ -620,6 +662,13 @@ impl<'a> BenchmarkRunner<'a> {
             println!(" ");
         }
 
+        let resources = if self.options.show_resource_usage {
+            self.all_resource_counters()
+                .map(|c| timing_result::ResourceSeries::from_counters(&c))
+        } else {
+            None
+        };
+
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
             let m_j = mean(&valid_energy);
@@ -656,6 +705,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .collect(),
             omitted_failed_runs,
             discarded_outliers,
+            resources,
         })
     }
 }
@@ -783,4 +833,26 @@ impl<'a> Benchmark<'a> {
 
         runner.finish(false)
     }
+}
+
+/// Compact count for the resource line: 3, 12.5, 1.2k, 3.4M.
+fn format_count(value: f64) -> String {
+    if value >= 1e6 {
+        format!("{:.1}M", value / 1e6)
+    } else if value >= 1e3 {
+        format!("{:.1}k", value / 1e3)
+    } else if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+#[test]
+fn test_format_count() {
+    assert_eq!(format_count(0.0), "0");
+    assert_eq!(format_count(3.0), "3");
+    assert_eq!(format_count(12.5), "12.5");
+    assert_eq!(format_count(1234.0), "1.2k");
+    assert_eq!(format_count(3_400_000.0), "3.4M");
 }

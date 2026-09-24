@@ -86,6 +86,11 @@ pub struct BenchmarkResult {
     /// --discard-outliers
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub discarded_outliers: Vec<usize>,
+
+    /// Per-run OS resource counters (context switches, page faults, block
+    /// I/O), exported with --resource-usage on Unix
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resources: Option<super::timing_result::ResourceSeries>,
 }
 
 /// Information about a benchmark run that was omitted due to failure.

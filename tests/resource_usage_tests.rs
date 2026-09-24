@@ -65,3 +65,84 @@ fn peak_memory_includes_children_of_the_intermediate_shell() {
 
     assert!(memory[0].iter().all(|&m| m > 90 * MB), "{memory:?}");
 }
+
+fn export_json(args: &[&str]) -> serde_json::Value {
+    let tempdir = tempfile::tempdir().unwrap();
+    let export = tempdir.path().join("out.json");
+    hyperfine()
+        .args(args)
+        .arg("--export-json")
+        .arg(&export)
+        .assert()
+        .success();
+    serde_json::from_str(&std::fs::read_to_string(&export).unwrap()).unwrap()
+}
+
+#[test]
+fn resource_usage_line_is_printed() {
+    hyperfine()
+        .args([
+            "-N",
+            "--runs=3",
+            "--style=basic",
+            "--resource-usage",
+            "true",
+        ])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("Resources (mean):   ctx-sw"))
+        .stdout(predicates::str::contains("faults"))
+        .stdout(predicates::str::contains("blocks"));
+}
+
+#[test]
+fn resource_counters_are_exported_per_run() {
+    let json = export_json(&["-N", "--runs=4", "--resource-usage", ALLOCATE_100MB]);
+    let resources = &json["results"][0]["resources"];
+
+    for key in [
+        "voluntary_ctx_switches",
+        "involuntary_ctx_switches",
+        "minor_faults",
+        "major_faults",
+        "block_input_ops",
+        "block_output_ops",
+    ] {
+        assert_eq!(resources[key].as_array().unwrap().len(), 4, "{key}");
+    }
+    // every process causes at least some page faults (the exact number depends
+    // on the OS, e.g. transparent huge pages on Linux need far fewer faults)
+    assert!(resources["minor_faults"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|v| v.as_u64().unwrap() > 0));
+}
+
+#[test]
+fn resource_counters_are_not_exported_by_default() {
+    let json = export_json(&["-N", "--runs=2", "true"]);
+    assert!(json["results"][0].get("resources").is_none());
+}
+
+#[test]
+fn resource_counters_stay_aligned_with_omitted_runs() {
+    let json = export_json(&[
+        "-N",
+        "--runs=5",
+        "--ignore-failure",
+        "--omit-failed-runs",
+        "--resource-usage",
+        "sh -c '[ \"$JOULEX_ITERATION\" = 2 ] && exit 1; true'",
+    ]);
+    let result = &json["results"][0];
+    let runs = result["times"].as_array().unwrap().len();
+    assert_eq!(runs, 4);
+    assert_eq!(
+        result["resources"]["minor_faults"]
+            .as_array()
+            .unwrap()
+            .len(),
+        runs
+    );
+}

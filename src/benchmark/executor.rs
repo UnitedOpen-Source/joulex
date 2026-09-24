@@ -155,6 +155,7 @@ impl Executor for RawExecutor<'_> {
                 time_system: result.time_system,
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
+                counters: result.counters,
             },
             result.status,
         ))
@@ -229,6 +230,7 @@ impl Executor for ShellExecutor<'_> {
                 time_system: result.time_system,
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
+                counters: result.counters,
             },
             result.status,
         ))
@@ -294,6 +296,7 @@ impl Executor for ShellExecutor<'_> {
             time_system: mean(&times_system),
             memory_usage_byte: 0,
             energy_joules: None,
+            counters: None,
         });
 
         Ok(())
@@ -351,6 +354,7 @@ impl Executor for MockExecutor {
                 time_system: 0.0,
                 memory_usage_byte: 0,
                 energy_joules: None,
+                counters: None,
             },
             status,
         ))

@@ -159,6 +159,7 @@ fn test_csv() {
             },
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
         BenchmarkResult {
             command: String::from("command_b"),
@@ -187,6 +188,7 @@ fn test_csv() {
             },
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
     ];
 
@@ -236,6 +238,7 @@ fn test_csv_formula_injection_sanitization() {
         },
         omitted_failed_runs: Vec::new(),
         discarded_outliers: Vec::new(),
+        resources: None,
     }];
 
     let actual = String::from_utf8(
@@ -314,6 +317,7 @@ fn test_csv_with_reference_command() {
             parameters: BTreeMap::new(),
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
         BenchmarkResult {
             command: String::from("param_cmd"),
@@ -341,6 +345,7 @@ fn test_csv_with_reference_command() {
             },
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
     ];
 
@@ -390,6 +395,7 @@ fn test_csv_heterogeneous_parameters() {
             },
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
         BenchmarkResult {
             command: String::from("cmd_b"),
@@ -417,6 +423,7 @@ fn test_csv_heterogeneous_parameters() {
             },
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
+            resources: None,
         },
     ];
 

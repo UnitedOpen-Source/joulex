@@ -5,6 +5,7 @@ use std::mem;
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, ExitStatus};
 
+use crate::benchmark::timing_result::ResourceCounters;
 use crate::util::units::Second;
 
 /// Resource usage of a single benchmarked process (and the descendants it
@@ -19,6 +20,9 @@ pub struct ChildUsage {
 
     /// Maximum resident set size, in bytes
     pub max_rss_byte: u64,
+
+    /// Context switches, page faults and block I/O
+    pub counters: ResourceCounters,
 }
 
 impl From<&libc::rusage> for ChildUsage {
@@ -35,10 +39,19 @@ impl From<&libc::rusage> for ChildUsage {
             max_rss.saturating_mul(1024)
         };
 
+        let count = |v: libc::c_long| u64::try_from(v).unwrap_or(0);
         ChildUsage {
             user: seconds(ru.ru_utime),
             system: seconds(ru.ru_stime),
             max_rss_byte,
+            counters: ResourceCounters {
+                voluntary_ctx_switches: count(ru.ru_nvcsw),
+                involuntary_ctx_switches: count(ru.ru_nivcsw),
+                minor_faults: count(ru.ru_minflt),
+                major_faults: count(ru.ru_majflt),
+                block_input_ops: count(ru.ru_inblock),
+                block_output_ops: count(ru.ru_oublock),
+            },
         }
     }
 }
