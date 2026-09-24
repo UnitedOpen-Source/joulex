@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use crate::command::{Command, Commands};
 use crate::export::ExportManager;
 use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
+use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 
 use anyhow::Result;
@@ -298,7 +299,16 @@ impl<'a> Scheduler<'a> {
                         reference.result.command_with_unused_parameters.cyan()
                     );
 
+                    // All absolute numbers use one unit (the one of the largest mean,
+                    // unless --time-unit is given), so the lines are directly comparable.
+                    let largest_mean = annotated_results
+                        .iter()
+                        .map(|r| r.result.mean)
+                        .fold(0.0, f64::max);
+                    let (_, unit) = format_duration_unit(largest_mean, self.options.time_unit);
+
                     for item in others {
+                        let absolute = absolute_difference(reference.result, item.result, unit);
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
                             format!(" ± {}", format!("{stddev:.2}").green())
                         } else {
@@ -322,9 +332,10 @@ impl<'a> Scheduler<'a> {
                             ),
                         };
                         println!(
-                            "{} {}",
+                            "{} {} {}",
                             comparator,
-                            item.result.command_with_unused_parameters.magenta()
+                            item.result.command_with_unused_parameters.magenta(),
+                            absolute.dimmed()
                         );
 
                         if self.options.deep_stats {
@@ -595,4 +606,84 @@ fn scheduler_round_robin() -> Result<()> {
     "#);
 
     Ok(())
+}
+
+/// "(12.3 ms, +4.5 ms)": the mean of `item` and its difference to the
+/// reference, plus energy when both results have it. Positive differences mean
+/// `item` is slower (or uses more energy) than the reference.
+fn absolute_difference(
+    reference: &BenchmarkResult,
+    item: &BenchmarkResult,
+    unit: crate::util::units::Unit,
+) -> String {
+    let signed = |value: f64, formatted: String| {
+        if value >= 0.0 {
+            format!("+{formatted}")
+        } else {
+            format!("−{formatted}")
+        }
+    };
+    let time_diff = item.mean - reference.mean;
+    let mut parts = vec![
+        format_duration(item.mean, Some(unit)),
+        signed(time_diff, format_duration(time_diff.abs(), Some(unit))),
+    ];
+    if let (Some(e_ref), Some(e_item)) = (reference.mean_energy_joules, item.mean_energy_joules) {
+        let energy_diff = e_item - e_ref;
+        parts.push(format!(
+            "{e_item:.3} J, {}",
+            signed(energy_diff, format!("{:.3} J", energy_diff.abs()))
+        ));
+    }
+    format!("({})", parts.join(", "))
+}
+
+#[cfg(test)]
+mod absolute_difference_tests {
+    use super::*;
+    use crate::util::units::Unit;
+
+    fn result(mean: f64, energy: Option<f64>) -> BenchmarkResult {
+        BenchmarkResult {
+            mean,
+            mean_energy_joules: energy,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn slower_item_has_positive_difference() {
+        assert_eq!(
+            absolute_difference(
+                &result(0.0557, None),
+                &result(0.1046, None),
+                Unit::MilliSecond
+            ),
+            "(104.6 ms, +48.9 ms)"
+        );
+    }
+
+    #[test]
+    fn faster_item_has_negative_difference() {
+        assert_eq!(
+            absolute_difference(&result(2.0, None), &result(1.5, None), Unit::Second),
+            "(1.500 s, −0.500 s)"
+        );
+    }
+
+    #[test]
+    fn energy_is_included_when_both_have_it() {
+        assert_eq!(
+            absolute_difference(
+                &result(1.0, Some(0.66)),
+                &result(2.0, Some(1.21)),
+                Unit::Second
+            ),
+            "(2.000 s, +1.000 s, 1.210 J, +0.550 J)"
+        );
+        assert_eq!(
+            absolute_difference(&result(1.0, Some(0.66)), &result(2.0, None), Unit::Second),
+            "(2.000 s, +1.000 s)"
+        );
+    }
 }

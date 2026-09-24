@@ -57,13 +57,16 @@ Benchmark 1: sleep 0.05
 ```
 Summary
   sleep 0.05 ran
-    1.87 ± 0.06 times faster than sleep 0.1
+    1.87 ± 0.06 times faster than sleep 0.1 (109.4 ms, +51.0 ms)
       [Bootstrap t-test: t = -93.74, p = 0.0000 -> statistically significant (p < 0.01)]
 ```
 
 - The fastest command (or the `--reference` command) is the baseline. Each ratio is the
   slower mean divided by the faster one, so it is always ≥ 1; the words *faster*/*slower*
   give the direction.
+- The parentheses show the other command's mean and the absolute difference to the baseline
+  (`+` = slower than the baseline, `−` = faster), in the unit of the largest mean, plus mean
+  energy and its difference when `--energy` is available.
 - The `±` is propagated from both standard deviations, assuming independent measurements:
   `σ_r = r · √((σ_a/μ_a)² + (σ_b/μ_b)²)`. Because σ describes single runs, this is a
   conservative spread of the ratio, not a confidence interval.
