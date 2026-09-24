@@ -277,6 +277,16 @@ pub fn build_command() -> Command {
                 .help("Maximum allowed total number of benchmark combinations when using parameters (default: 100000)."),
         )
         .arg(
+            Arg::new("expand-used-parameters")
+                .long("expand-used-parameters")
+                .action(ArgAction::SetTrue)
+                .help("Only combine each command with the parameters it actually uses, instead of \
+                       with all parameters. A parameter is used if '{NAME}' appears in the command, \
+                       its --command-name, or any --prepare/--conclude/--setup/--cleanup command. \
+                       Example: with '-L a 1,2 -L b x,y', the command 'foo' is benchmarked once \
+                       instead of 4 times, and 'bar {a}' twice."),
+        )
+        .arg(
             Arg::new("shell")
                 .long("shell")
                 .short('S')

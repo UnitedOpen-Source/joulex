@@ -321,6 +321,16 @@ impl<'a> Commands<'a> {
                 break 'outer;
             }
 
+            if matches.get_flag("expand-used-parameters") {
+                let intermediate_templates: Vec<&str> = ["prepare", "conclude", "setup", "cleanup"]
+                    .iter()
+                    .filter_map(|arg| matches.get_many::<String>(arg))
+                    .flatten()
+                    .map(String::as_str)
+                    .collect();
+                commands = Self::keep_used_parameters(commands, &intermediate_templates);
+            }
+
             Ok(Self(commands))
         } else {
             let command_names = command_names.map_or(vec![], |names| {
@@ -336,6 +346,48 @@ impl<'a> Commands<'a> {
             }
             Ok(Self(commands))
         }
+    }
+
+    /// `--expand-used-parameters`: drop the parameters a command doesn't use and
+    /// remove the resulting duplicate benchmarks.
+    ///
+    /// A parameter is used by a command if `{name}` appears in its command
+    /// template, its `--command-name`, or any `--prepare`, `--conclude`,
+    /// `--setup` or `--cleanup` template (those can make otherwise identical
+    /// command lines behave differently, so they keep all combinations).
+    fn keep_used_parameters(
+        commands: Vec<Command<'a>>,
+        intermediate_templates: &[&str],
+    ) -> Vec<Command<'a>> {
+        let mut seen = std::collections::HashSet::new();
+        commands
+            .into_iter()
+            .map(|mut command| {
+                let expression = command.expression;
+                let name = command.name;
+                command.parameters.retain(|(parameter, _)| {
+                    let placeholder = format!("{{{parameter}}}");
+                    expression.contains(&placeholder)
+                        || name.is_some_and(|n| n.contains(&placeholder))
+                        || intermediate_templates
+                            .iter()
+                            .any(|t| t.contains(&placeholder))
+                });
+                command
+            })
+            .filter(|command| {
+                let key = (
+                    command.expression,
+                    command.get_name(),
+                    command
+                        .parameters
+                        .iter()
+                        .map(|(n, v)| (n.to_string(), v.to_string()))
+                        .collect::<Vec<_>>(),
+                );
+                seen.insert(key)
+            })
+            .collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &Command<'a>> {
