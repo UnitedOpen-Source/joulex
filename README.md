@@ -1,26 +1,22 @@
-# hyperfine
-[![CICD](https://github.com/sharkdp/hyperfine/actions/workflows/CICD.yml/badge.svg)](https://github.com/sharkdp/hyperfine/actions/workflows/CICD.yml)
-[![Version info](https://img.shields.io/crates/v/hyperfine.svg)](https://crates.io/crates/hyperfine)
-[中文](https://github.com/chinanf-boy/hyperfine-zh)
+# joulex
+[![CICD](https://github.com/unitedopensource/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/unitedopensource/joulex/actions/workflows/CICD.yml)
+[![Version info](https://img.shields.io/crates/v/joulex.svg)](https://crates.io/crates/joulex)
 
-A command-line benchmarking tool.
+A multi-dimensional command-line benchmarking tool with **Performance per Watt (Energy)** and **Deep Statistics (Criterion-rs)**.
 
-**Demo**: Benchmarking [`fd`](https://github.com/sharkdp/fd) and
-[`find`](https://www.gnu.org/software/findutils/):
+**Joulex** is a hard fork of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) and incorporates statistical rigor inspired by [`Gabriella439/bench`](https://github.com/Gabriella439/bench). It addresses the need for energy-aware and statistically robust systems benchmarking.
 
-![hyperfine](https://i.imgur.com/z19OYxE.gif)
+## Key Features
 
-## Features
-
-* Statistical analysis across multiple runs.
-* Support for arbitrary shell commands.
-* Constant feedback about the benchmark progress and current estimates.
-* Warmup runs can be executed before the actual benchmark.
-* Cache-clearing commands can be set up before each timing run.
-* Statistical outlier detection to detect interference from other programs and caching effects.
-* Export results to various formats: CSV, JSON, Markdown, AsciiDoc.
-* Parameterized benchmarks (e.g. vary the number of threads).
-* Cross-platform
+* **⚡ Performance per Watt & Energy Benchmarking (`-E`, `--energy`)**: Hardware RAPL microjoule counters (Linux sysfs powercap) to measure energy consumption in Joules (mean ± σ) and average active Power in Watts.
+* **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, bringing academic-level precision to CLI profiling.
+* **Statistical analysis across multiple runs**: Mean, median, stddev, min, max, user, and kernel CPU time.
+* **Support for arbitrary shell commands**: Raw or custom shells.
+* **Outlier detection**: Modified Z-score outlier detection to identify caching or interference.
+* **Warmup runs & cache-clearing commands**: Set up before timing runs.
+* **Export results to various formats**: CSV, JSON, Markdown, AsciiDoc, Org-mode.
+* **Parameterized benchmarks**: Vary arguments or matrices of parameters.
+* **Cross-platform**: Linux, macOS, Windows.
 
 ## Usage
 

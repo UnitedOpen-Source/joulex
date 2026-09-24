@@ -20,6 +20,6 @@ fn main() {
         Shell::PowerShell,
         Shell::Elvish,
     ] {
-        generate_to(shell, &mut command, "hyperfine", &outdir).unwrap();
+        generate_to(shell, &mut command, "joulex", &outdir).unwrap();
     }
 }

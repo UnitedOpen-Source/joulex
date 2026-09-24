@@ -246,6 +246,12 @@ pub struct Options {
 
     /// Which time unit to use when displaying results
     pub time_unit: Option<Unit>,
+
+    /// Measure energy consumption in Joules and display Performance per Watt
+    pub measure_energy: bool,
+
+    /// Calculate deep statistics (confidence intervals, bootstrapping)
+    pub deep_stats: bool,
 }
 
 impl Default for Options {
@@ -268,6 +274,8 @@ impl Default for Options {
             command_output_policies: vec![CommandOutputPolicy::Null],
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
+            measure_energy: false,
+            deep_stats: false,
         }
     }
 }
@@ -463,6 +471,9 @@ impl Options {
         } else {
             CommandInputPolicy::Null
         };
+
+        options.measure_energy = matches.get_flag("energy");
+        options.deep_stats = matches.get_flag("deep-stats");
 
         Ok(options)
     }

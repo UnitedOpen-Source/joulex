@@ -46,6 +46,18 @@ pub struct BenchmarkResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_usage_byte: Option<Vec<u64>>,
 
+    /// Average energy consumed in Joules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_energy_joules: Option<f64>,
+
+    /// Average power consumption in Watts (mean_energy_joules / mean_time)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mean_watts: Option<f64>,
+
+    /// All energy measurements in Joules
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub energy_joules: Option<Vec<f64>>,
+
     /// Exit codes of all command invocations
     pub exit_codes: Vec<Option<i32>>,
 

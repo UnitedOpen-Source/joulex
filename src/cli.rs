@@ -16,11 +16,11 @@ where
 
 /// Build the clap command for parsing command line arguments
 fn build_command() -> Command {
-    Command::new("hyperfine")
+    Command::new("joulex")
         .version(crate_version!())
         .next_line_help(true)
         .hide_possible_values(true)
-        .about("A command-line benchmarking tool.")
+        .about("A multi-dimensional command-line benchmarking tool with energy and deep stats.")
         .help_expected(true)
         .max_term_width(80)
         .arg(
@@ -250,6 +250,19 @@ fn build_command() -> Command {
                      the colors without any interactive output. Set this to 'none' to disable all \
                      the output of the tool.",
                 ),
+        )
+        .arg(
+            Arg::new("energy")
+                .long("energy")
+                .short('E')
+                .action(ArgAction::SetTrue)
+                .help("Measure energy consumption (Joules) and average power draw (Watts) using hardware sensors."),
+        )
+        .arg(
+            Arg::new("deep-stats")
+                .long("deep-stats")
+                .action(ArgAction::SetTrue)
+                .help("Perform deep statistical analysis (bootstrapped confidence intervals and kernel density estimation)."),
         )
         .arg(
             Arg::new("sort")

@@ -17,12 +17,14 @@ use colored::*;
 pub mod benchmark;
 pub mod cli;
 pub mod command;
+pub mod energy;
 pub mod error;
 pub mod export;
 pub mod options;
 pub mod outlier_detection;
 pub mod output;
 pub mod parameter;
+pub mod stats;
 pub mod timer;
 pub mod util;
 

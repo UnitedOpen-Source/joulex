@@ -16,6 +16,8 @@ use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 use crate::output::warnings::{OutlierWarningOptions, Warnings};
 use crate::parameter::ParameterNameAndValue;
+use crate::energy::get_energy_sampler;
+use crate::stats::deep::compute_deep_stats;
 use crate::util::exit_code::extract_exit_code;
 use crate::util::min_max::{max, min};
 use crate::util::units::Second;
@@ -152,8 +154,15 @@ impl<'a> Benchmark<'a> {
         let mut times_user: Vec<Second> = vec![];
         let mut times_system: Vec<Second> = vec![];
         let mut memory_usage_byte: Vec<u64> = vec![];
+        let mut energy_measurements: Vec<f64> = vec![];
         let mut exit_codes: Vec<Option<i32>> = vec![];
         let mut all_succeeded = true;
+
+        let mut energy_sampler = if self.options.measure_energy {
+            Some(get_energy_sampler())
+        } else {
+            None
+        };
 
         let output_policy = &self.options.command_output_policies[self.number];
 
@@ -244,12 +253,16 @@ impl<'a> Benchmark<'a> {
             preparation_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
 
         // Initial timing run
+        if let Some(sampler) = energy_sampler.as_mut() {
+            sampler.start();
+        }
         let (res, status) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Benchmark(0),
             None,
             output_policy,
         )?;
+        let energy_initial = energy_sampler.as_mut().and_then(|s| s.stop());
         let success = status.success();
 
         let conclusion_result = run_conclusion_command()?;
@@ -281,6 +294,9 @@ impl<'a> Benchmark<'a> {
         times_user.push(res.time_user);
         times_system.push(res.time_system);
         memory_usage_byte.push(res.memory_usage_byte);
+        if let Some(e) = energy_initial {
+            energy_measurements.push(e);
+        }
         exit_codes.push(extract_exit_code(status));
 
         all_succeeded = all_succeeded && success;
@@ -306,18 +322,25 @@ impl<'a> Benchmark<'a> {
                 bar.set_message(msg.to_owned())
             }
 
+            if let Some(sampler) = energy_sampler.as_mut() {
+                sampler.start();
+            }
             let (res, status) = self.executor.run_command_and_measure(
                 self.command,
                 BenchmarkIteration::Benchmark(i + 1),
                 None,
                 output_policy,
             )?;
+            let energy = energy_sampler.as_mut().and_then(|s| s.stop());
             let success = status.success();
 
             times_real.push(res.time_real);
             times_user.push(res.time_user);
             times_system.push(res.time_system);
             memory_usage_byte.push(res.memory_usage_byte);
+            if let Some(e) = energy {
+                energy_measurements.push(e);
+            }
             exit_codes.push(extract_exit_code(status));
 
             all_succeeded = all_succeeded && success;
@@ -389,6 +412,45 @@ impl<'a> Benchmark<'a> {
                     num_str.dimmed()
                 );
             }
+
+            if self.options.measure_energy {
+                if !energy_measurements.is_empty() {
+                    let mean_joules = mean(&energy_measurements);
+                    let stddev_joules = if energy_measurements.len() > 1 {
+                        Some(standard_deviation(&energy_measurements, Some(mean_joules)))
+                    } else {
+                        None
+                    };
+                    let watts = if t_mean > 0.0 { mean_joules / t_mean } else { 0.0 };
+
+                    let energy_str = if let Some(sd) = stddev_joules {
+                        format!("{:.3} ± {:.3} J", mean_joules, sd)
+                    } else {
+                        format!("{:.3} J", mean_joules)
+                    };
+
+                    println!(
+                        "  Energy ({}):        {:>14}    [Power: {}]",
+                        "mean".yellow().bold(),
+                        energy_str.yellow().bold(),
+                        format!("{:.2} W", watts).yellow()
+                    );
+                } else {
+                    println!(
+                        "  Energy:             {:>14}",
+                        "RAPL unprivileged/unavailable on host".dimmed()
+                    );
+                }
+            }
+
+            if self.options.deep_stats {
+                if let Some(deep) = compute_deep_stats(&times_real) {
+                    println!(
+                        "  Bootstrap 95% CI:   [mean: {:.4}s … {:.4}s, median: {:.4}s … {:.4}s]",
+                        deep.mean_ci_lower, deep.mean_ci_upper, deep.median_ci_lower, deep.median_ci_upper
+                    );
+                }
+            }
         }
 
         // Warnings
@@ -443,6 +505,14 @@ impl<'a> Benchmark<'a> {
 
         self.run_cleanup_command(self.command.get_parameters().iter().cloned(), output_policy)?;
 
+        let (mean_energy, mean_watts, energy_all) = if !energy_measurements.is_empty() {
+            let m_j = mean(&energy_measurements);
+            let m_w = if t_mean > 0.0 { m_j / t_mean } else { 0.0 };
+            (Some(m_j), Some(m_w), Some(energy_measurements))
+        } else {
+            (None, None, None)
+        };
+
         Ok(BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -455,6 +525,9 @@ impl<'a> Benchmark<'a> {
             max: t_max,
             times: Some(times_real),
             memory_usage_byte: Some(memory_usage_byte),
+            mean_energy_joules: mean_energy,
+            mean_watts,
+            energy_joules: energy_all,
             exit_codes,
             parameters: self
                 .command

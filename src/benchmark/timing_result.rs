@@ -14,4 +14,7 @@ pub struct TimingResult {
 
     /// Maximum amount of memory used, in bytes
     pub memory_usage_byte: u64,
+
+    /// Energy consumed during execution in Joules (if measured)
+    pub energy_joules: Option<f64>,
 }
