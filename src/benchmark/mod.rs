@@ -559,6 +559,8 @@ impl<'a> Benchmark<'a> {
             min: t_min,
             max: t_max,
             times: Some(times_real),
+            user_times: Some(times_user),
+            system_times: Some(times_system),
             memory_usage_byte: Some(memory_usage_byte),
             mean_energy_joules: mean_energy,
             mean_watts,

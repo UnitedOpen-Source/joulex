@@ -265,6 +265,12 @@ fn scheduler_basic() -> Result<()> {
       times:
         - 0.123
         - 0.123
+      user_times:
+        - 0
+        - 0
+      system_times:
+        - 0
+        - 0
       memory_usage_byte:
         - 0
         - 0
@@ -282,6 +288,12 @@ fn scheduler_basic() -> Result<()> {
       times:
         - 0.456
         - 0.456
+      user_times:
+        - 0
+        - 0
+      system_times:
+        - 0
+        - 0
       memory_usage_byte:
         - 0
         - 0
