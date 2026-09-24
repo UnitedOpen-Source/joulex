@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use csv::WriterBuilder;
 
@@ -40,7 +41,13 @@ impl Exporter for CsvExporter {
     ) -> Result<Vec<u8>> {
         let mut writer = WriterBuilder::new().from_writer(vec![]);
 
-        let mut num_params = 0;
+        let mut all_param_names = BTreeSet::new();
+        for res in results {
+            for param_name in res.parameters.keys() {
+                all_param_names.insert(param_name.as_str());
+            }
+        }
+
         {
             let mut headers: Vec<Cow<[u8]>> = [
                 // The list of times and exit codes cannot be exported to the CSV file - omit them.
@@ -50,14 +57,10 @@ impl Exporter for CsvExporter {
             .map(|x| Cow::Borrowed(x.as_bytes()))
             .collect();
 
-            // Use param column names from the first non-reference command
-            let non_ref = results.iter().find(|res| !res.parameters.is_empty());
-            if let Some(res) = non_ref {
-                num_params = res.parameters.len();
-                for param_name in res.parameters.keys() {
-                    headers.push(Cow::Owned(format!("parameter_{param_name}").into_bytes()));
-                }
+            for param_name in &all_param_names {
+                headers.push(Cow::Owned(format!("parameter_{param_name}").into_bytes()));
             }
+
             writer.write_record(headers)?;
         }
 
@@ -74,14 +77,9 @@ impl Exporter for CsvExporter {
             ] {
                 fields.push(Cow::Owned(f.to_string().into_bytes()))
             }
-            if res.parameters.is_empty() && num_params > 0 {
-                // Reference command, insert an empty column for each param
-                let mut empties = vec![Cow::Borrowed("".as_bytes()); num_params];
-                fields.append(&mut empties);
-            } else {
-                for v in res.parameters.values() {
-                    fields.push(sanitize_csv_value(v))
-                }
+            for param_name in &all_param_names {
+                let val = res.parameters.get(*param_name).map(|s| s.as_str()).unwrap_or("");
+                fields.push(sanitize_csv_value(val));
             }
             writer.write_record(fields)?;
         }
@@ -239,4 +237,140 @@ fn test_sanitize_csv_value() {
         sanitize_csv_value("normal-param").as_ref(),
         b"normal-param".as_slice()
     );
+}
+
+#[test]
+fn test_csv_with_reference_command() {
+    use std::collections::BTreeMap;
+    let exporter = CsvExporter::default();
+
+    let results = vec![
+        BenchmarkResult {
+            command: String::from("ref_cmd"),
+            command_with_unused_parameters: String::from("ref_cmd"),
+            mean: 1.0,
+            stddev: None,
+            median: 1.0,
+            user: 0.5,
+            system: 0.5,
+            min: 1.0,
+            max: 1.0,
+            times: None,
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0)],
+            parameters: BTreeMap::new(),
+        },
+        BenchmarkResult {
+            command: String::from("param_cmd"),
+            command_with_unused_parameters: String::from("param_cmd"),
+            mean: 2.0,
+            stddev: None,
+            median: 2.0,
+            user: 1.0,
+            system: 1.0,
+            min: 2.0,
+            max: 2.0,
+            times: None,
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0)],
+            parameters: {
+                let mut params = BTreeMap::new();
+                params.insert("secs".into(), "2".into());
+                params
+            },
+        },
+    ];
+
+    let actual = String::from_utf8(
+        exporter
+            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .unwrap(),
+    )
+    .unwrap();
+
+    insta::assert_snapshot!(actual, @r#"
+    command,mean,stddev,median,user,system,min,max,parameter_secs
+    ref_cmd,1,0,1,0.5,0.5,1,1,
+    param_cmd,2,0,2,1,1,2,2,2
+    "#);
+}
+
+#[test]
+fn test_csv_heterogeneous_parameters() {
+    use std::collections::BTreeMap;
+    let exporter = CsvExporter::default();
+
+    let results = vec![
+        BenchmarkResult {
+            command: String::from("cmd_a"),
+            command_with_unused_parameters: String::from("cmd_a"),
+            mean: 1.0,
+            stddev: None,
+            median: 1.0,
+            user: 0.5,
+            system: 0.5,
+            min: 1.0,
+            max: 1.0,
+            times: None,
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0)],
+            parameters: {
+                let mut params = BTreeMap::new();
+                params.insert("alpha".into(), "val1".into());
+                params
+            },
+        },
+        BenchmarkResult {
+            command: String::from("cmd_b"),
+            command_with_unused_parameters: String::from("cmd_b"),
+            mean: 2.0,
+            stddev: None,
+            median: 2.0,
+            user: 1.0,
+            system: 1.0,
+            min: 2.0,
+            max: 2.0,
+            times: None,
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0)],
+            parameters: {
+                let mut params = BTreeMap::new();
+                params.insert("beta".into(), "val2".into());
+                params
+            },
+        },
+    ];
+
+    let actual = String::from_utf8(
+        exporter
+            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .unwrap(),
+    )
+    .unwrap();
+
+    insta::assert_snapshot!(actual, @r#"
+    command,mean,stddev,median,user,system,min,max,parameter_alpha,parameter_beta
+    cmd_a,1,0,1,0.5,0.5,1,1,val1,
+    cmd_b,2,0,2,1,1,2,2,,val2
+    "#);
 }
