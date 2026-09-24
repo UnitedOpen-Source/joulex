@@ -30,7 +30,7 @@ pub fn build_command() -> Command {
                 .help("The command to benchmark. This can be the name of an executable, a command \
                        line like \"grep -i todo\" or a shell command like \"sleep 0.5 && echo test\". \
                        The latter is only available if the shell is not explicitly disabled via \
-                       '--shell=none'. If multiple commands are given, hyperfine will show a \
+                       '--shell=none'. If multiple commands are given, joulex will show a \
                        comparison of the respective runtimes.")
                 .required_unless_present_any(["generate-completions", "import-json"])
                 .action(ArgAction::Append)
@@ -82,7 +82,7 @@ pub fn build_command() -> Command {
                 .action(ArgAction::Set)
                 .value_name("NUM")
                 .help("Perform exactly NUM runs for each command. If this option is not specified, \
-                       hyperfine automatically determines the number of runs."),
+                       joulex automatically determines the number of runs."),
         )
         .arg(
             Arg::new("setup")
@@ -451,8 +451,8 @@ pub fn build_command() -> Command {
                        <FILE>:   Write the output to the given file.\n\n\
                     This option can be specified once for all commands or multiple times, once for \
                     each command. Note: If you want to log the output of each and every iteration, \
-                    you can use a shell redirection and the '$HYPERFINE_ITERATION' environment variable:\n    \
-                    hyperfine 'my-command > output-${HYPERFINE_ITERATION}.log'\n\n",
+                    you can use a shell redirection and the '$JOULEX_ITERATION' (or '$HYPERFINE_ITERATION') environment variable:\n    \
+                    joulex 'my-command > output-${JOULEX_ITERATION}.log'\n\n",
                 ),
         )
         .arg(
