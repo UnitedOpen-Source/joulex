@@ -101,8 +101,29 @@ impl<'a> Scheduler<'a> {
                 runner.run_setup()?;
             }
 
-            // 2. Warmup phase (interleaved)
-            if self.options.warmup_count > 0 {
+            // 2. Warmup phase: with `--warmup auto`, each command warms up until
+            // it is stable (before interleaving starts); otherwise interleaved
+            if self.options.warmup_auto {
+                let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
+                    Some(get_progress_bar(
+                        super::AUTO_WARMUP_MAX_RUNS * runners.len() as u64,
+                        "Performing warmup runs (auto)",
+                        self.options.output_style,
+                    ))
+                } else {
+                    None
+                };
+                for runner in &mut runners {
+                    runner.warmup = Some(runner.run_auto_warmup(|| {
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.inc(1);
+                        }
+                    })?);
+                }
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.finish_and_clear();
+                }
+            } else if self.options.warmup_count > 0 {
                 let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
                     Some(get_progress_bar(
                         self.options.warmup_count * runners.len() as u64,
@@ -115,7 +136,7 @@ impl<'a> Scheduler<'a> {
 
                 for w in 0..self.options.warmup_count {
                     for runner in &mut runners {
-                        runner.run_warmup_iteration(w)?;
+                        let _ = runner.run_warmup_iteration(w)?;
                         if let Some(bar) = progress_bar.as_ref() {
                             bar.inc(1);
                         }

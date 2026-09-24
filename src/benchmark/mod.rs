@@ -55,6 +55,9 @@ pub struct BenchmarkRunner<'a> {
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
     pub all_succeeded: bool,
     pub count: u64,
+    /// Number of warmup runs performed and, for `--warmup auto`, whether the
+    /// timings stabilized
+    pub warmup: Option<WarmupSummary>,
     pub initial_total_time: f64,
 }
 
@@ -119,6 +122,7 @@ impl<'a> BenchmarkRunner<'a> {
             resource_counters: vec![],
             all_succeeded: true,
             count: 0,
+            warmup: None,
             initial_total_time: 0.0,
         }
     }
@@ -208,16 +212,46 @@ impl<'a> BenchmarkRunner<'a> {
             .transpose()
     }
 
-    pub fn run_warmup_iteration(&mut self, iteration: u64) -> Result<()> {
+    /// Perform one warmup run and return its wall-clock time.
+    pub fn run_warmup_iteration(&mut self, iteration: u64) -> Result<Second> {
         let _ = self.run_preparation(BenchmarkIteration::Warmup(iteration))?;
-        let _ = self.executor.run_command_and_measure(
+        let (result, _) = self.executor.run_command_and_measure(
             self.command,
             BenchmarkIteration::Warmup(iteration),
             None,
             self.output_policy,
         )?;
         let _ = self.run_conclusion(BenchmarkIteration::Warmup(iteration))?;
-        Ok(())
+        Ok(result.time_real)
+    }
+
+    /// `--warmup auto`: perform warmup runs until the last
+    /// `AUTO_WARMUP_WINDOW` timings are stable (relative spread at most
+    /// `AUTO_WARMUP_THRESHOLD`), at most `AUTO_WARMUP_MAX_RUNS` times.
+    pub fn run_auto_warmup(&mut self, mut on_run: impl FnMut()) -> Result<WarmupSummary> {
+        let mut times = Vec::new();
+        for iteration in 0..AUTO_WARMUP_MAX_RUNS {
+            times.push(self.run_warmup_iteration(iteration)?);
+            on_run();
+            if times.len() >= AUTO_WARMUP_WINDOW {
+                let spread = relative_spread(&times[times.len() - AUTO_WARMUP_WINDOW..]);
+                if spread <= AUTO_WARMUP_THRESHOLD {
+                    return Ok(WarmupSummary {
+                        runs: times.len() as u64,
+                        auto: true,
+                        stable: true,
+                        spread,
+                    });
+                }
+            }
+        }
+        let window = &times[times.len().saturating_sub(AUTO_WARMUP_WINDOW)..];
+        Ok(WarmupSummary {
+            runs: times.len() as u64,
+            auto: true,
+            stable: false,
+            spread: relative_spread(window),
+        })
     }
 
     pub fn run_initial_measurement(&mut self) -> Result<()> {
@@ -506,6 +540,20 @@ impl<'a> BenchmarkRunner<'a> {
                 );
             }
 
+            if let Some(warmup) = self.warmup.filter(|w| w.auto) {
+                println!(
+                    "  Warmup (auto):      {}",
+                    format!(
+                        "{} runs, last {} within {:.1}%{}",
+                        warmup.runs,
+                        AUTO_WARMUP_WINDOW.min(warmup.runs as usize),
+                        warmup.spread * 100.0,
+                        if warmup.stable { "" } else { " (not stable)" }
+                    )
+                    .dimmed()
+                );
+            }
+
             if self.options.show_resource_usage {
                 match self.resource_summary() {
                     Some(line) => println!("  Resources (mean):   {}", line.dimmed()),
@@ -599,6 +647,12 @@ impl<'a> BenchmarkRunner<'a> {
             warnings.push(Warnings::NonZeroExitCode);
         }
 
+        if let Some(warmup) = self.warmup.filter(|w| w.auto && !w.stable) {
+            warnings.push(Warnings::WarmupNotStable {
+                runs: warmup.runs,
+                spread: warmup.spread,
+            });
+        }
         if too_many_outliers {
             warnings.push(Warnings::TooManyOutliers {
                 total: self.times_real.len(),
@@ -615,7 +669,7 @@ impl<'a> BenchmarkRunner<'a> {
         let scores = modified_zscores(&self.times_real);
 
         let outlier_warning_options = OutlierWarningOptions {
-            warmup_in_use: self.options.warmup_count > 0,
+            warmup_in_use: self.options.warmup_count > 0 || self.options.warmup_auto,
             prepare_in_use: self
                 .options
                 .preparation_command
@@ -683,6 +737,7 @@ impl<'a> BenchmarkRunner<'a> {
             percentiles: crate::stats::summary::quartiles_and_tails(&self.times_real)
                 .map(|[p05, p25, p75, p95]| benchmark_result::Percentiles { p05, p25, p75, p95 }),
             geometric_mean: crate::stats::summary::geometric_mean(&self.times_real),
+            warmup_runs: self.warmup.filter(|w| w.auto).map(|w| w.runs),
             user: user_mean,
             system: system_mean,
             cpu_percent,
@@ -756,7 +811,25 @@ impl<'a> Benchmark<'a> {
         runner.run_setup()?;
 
         // Warmup phase
-        if self.options.warmup_count > 0 {
+        if self.options.warmup_auto {
+            let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
+                Some(get_progress_bar(
+                    AUTO_WARMUP_MAX_RUNS,
+                    "Performing warmup runs (auto)",
+                    self.options.output_style,
+                ))
+            } else {
+                None
+            };
+            runner.warmup = Some(runner.run_auto_warmup(|| {
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.inc(1)
+                }
+            })?);
+            if let Some(bar) = progress_bar.as_ref() {
+                bar.finish_and_clear()
+            }
+        } else if self.options.warmup_count > 0 {
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
                 Some(get_progress_bar(
                     self.options.warmup_count,
@@ -772,7 +845,7 @@ impl<'a> Benchmark<'a> {
             };
 
             for i in 0..self.options.warmup_count {
-                runner.run_warmup_iteration(i)?;
+                let _ = runner.run_warmup_iteration(i)?;
                 if let Some(bar) = progress_bar.as_ref() {
                     bar.inc(1)
                 }
@@ -864,4 +937,41 @@ fn per_command(values: &[String], number: usize) -> &str {
     } else {
         &values[number]
     }
+}
+
+/// Number of most recent warmup runs that must be stable for `--warmup auto`
+pub const AUTO_WARMUP_WINDOW: usize = 5;
+/// Largest relative spread `(max - min) / median` of that window
+pub const AUTO_WARMUP_THRESHOLD: f64 = 0.01;
+/// Upper bound on the number of warmup runs for `--warmup auto`
+pub const AUTO_WARMUP_MAX_RUNS: u64 = 100;
+
+/// Outcome of the warmup phase of one benchmark.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WarmupSummary {
+    pub runs: u64,
+    pub auto: bool,
+    pub stable: bool,
+    /// Relative spread of the last `AUTO_WARMUP_WINDOW` warmup runs
+    pub spread: f64,
+}
+
+/// `(max - min) / median` of the given timings (0 for an empty slice).
+fn relative_spread(times: &[f64]) -> f64 {
+    if times.is_empty() {
+        return 0.0;
+    }
+    let median = median(times);
+    if median <= 0.0 {
+        return 0.0;
+    }
+    (max(times) - min(times)) / median
+}
+
+#[test]
+fn test_relative_spread() {
+    assert_eq!(relative_spread(&[]), 0.0);
+    assert_eq!(relative_spread(&[1.0, 1.0, 1.0]), 0.0);
+    assert!((relative_spread(&[0.99, 1.0, 1.01]) - 0.02).abs() < 1e-12);
+    assert!((relative_spread(&[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-12);
 }

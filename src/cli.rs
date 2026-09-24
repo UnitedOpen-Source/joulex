@@ -74,11 +74,13 @@ pub fn build_command() -> Command {
             Arg::new("warmup")
                 .long("warmup")
                 .short('w')
-                .value_name("NUM")
+                .value_name("NUM|auto")
                 .action(ArgAction::Set)
                 .help(
                     "Perform NUM warmup runs before the actual benchmark. This can be used \
-                     to fill (disk) caches for I/O-heavy programs.",
+                     to fill (disk) caches for I/O-heavy programs. With 'auto', warmup runs \
+                     are performed until the last 5 timings differ by at most 1% \
+                     ((max - min) / median), at most 100 runs.",
                 ),
         )
         .arg(

@@ -211,6 +211,9 @@ pub struct Options {
     /// Number of warmup runs
     pub warmup_count: u64,
 
+    /// `--warmup auto`: warm up until the timings are stable
+    pub warmup_auto: bool,
+
     /// Minimum benchmarking time
     pub min_benchmarking_time: Second,
 
@@ -292,6 +295,7 @@ impl Default for Options {
         Options {
             run_bounds: RunBounds::default(),
             warmup_count: 0,
+            warmup_auto: false,
             min_benchmarking_time: 3.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
@@ -334,7 +338,11 @@ impl Options {
                 .transpose()
         };
 
-        options.warmup_count = param_to_u64("warmup")?.unwrap_or(options.warmup_count);
+        if matches.get_one::<String>("warmup").map(String::as_str) == Some("auto") {
+            options.warmup_auto = true;
+        } else {
+            options.warmup_count = param_to_u64("warmup")?.unwrap_or(options.warmup_count);
+        }
 
         let mut min_runs = param_to_u64("min-runs")?;
         let mut max_runs = param_to_u64("max-runs")?;
