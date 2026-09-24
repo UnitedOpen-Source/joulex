@@ -684,6 +684,9 @@ impl<'a> BenchmarkRunner<'a> {
             mean: t_mean,
             stddev: t_stddev,
             median: t_median,
+            percentiles: crate::stats::summary::quartiles_and_tails(&self.times_real)
+                .map(|[p05, p25, p75, p95]| benchmark_result::Percentiles { p05, p25, p75, p95 }),
+            geometric_mean: crate::stats::summary::geometric_mean(&self.times_real),
             user: user_mean,
             system: system_mean,
             cpu_percent,

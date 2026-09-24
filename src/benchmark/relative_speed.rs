@@ -194,6 +194,8 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         omitted_failed_runs: Vec::new(),
         discarded_outliers: Vec::new(),
         resources: None,
+        percentiles: None,
+        geometric_mean: None,
     }
 }
 

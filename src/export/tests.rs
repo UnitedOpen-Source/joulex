@@ -47,6 +47,8 @@ fn test_markup_export_auto_ms() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -71,6 +73,8 @@ fn test_markup_export_auto_ms() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
     ];
 
@@ -140,6 +144,8 @@ fn test_markup_export_auto_s() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -164,6 +170,8 @@ fn test_markup_export_auto_s() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
     ];
 
@@ -233,6 +241,8 @@ fn test_markup_export_manual_ms() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -257,6 +267,8 @@ fn test_markup_export_manual_ms() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
     ];
 
@@ -325,6 +337,8 @@ fn test_markup_export_manual_s() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -349,6 +363,8 @@ fn test_markup_export_manual_s() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
     ];
 
@@ -416,6 +432,8 @@ fn test_markup_export_zero_mean_displays_na() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -440,6 +458,8 @@ fn test_markup_export_zero_mean_displays_na() {
             omitted_failed_runs: Vec::new(),
             discarded_outliers: Vec::new(),
             resources: None,
+            percentiles: None,
+            geometric_mean: None,
         },
     ];
 

@@ -112,3 +112,43 @@ fn rejects_invalid_labels() {
         .failure()
         .stderr(predicate::str::contains("Duplicate label key 'a'"));
 }
+
+#[test]
+fn json_contains_percentiles_and_geometric_mean() {
+    let (json, _) = export(&["--runs=5", "sleep 0.1"]);
+    let result = &json["results"][0];
+
+    for key in ["p05", "p25", "p75", "p95"] {
+        let value = result["percentiles"][key].as_f64().unwrap();
+        assert!((value - 0.1).abs() < 1e-9, "{key}: {value}");
+    }
+    assert!((result["geometric_mean"].as_f64().unwrap() - 0.1).abs() < 1e-9);
+}
+
+#[test]
+fn json_percentiles_are_imported_back_unchanged() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = dir.path().join("first.json");
+    let second = dir.path().join("second.json");
+    hyperfine()
+        .args(["--debug-mode", "--runs=5", "--export-json"])
+        .arg(&first)
+        .arg("sleep 0.1")
+        .assert()
+        .success();
+    hyperfine()
+        .arg("--import-json")
+        .arg(&first)
+        .arg("--export-json")
+        .arg(&second)
+        .assert()
+        .success();
+
+    let read = |p: &std::path::Path| -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+    };
+    assert_eq!(
+        read(&first)["results"][0]["percentiles"],
+        read(&second)["results"][0]["percentiles"]
+    );
+}
