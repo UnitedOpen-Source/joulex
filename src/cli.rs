@@ -277,6 +277,21 @@ pub fn build_command() -> Command {
                        '--ignore-failure' with parameter scans where some combinations fail."),
         )
         .arg(
+            Arg::new("omit-failed-runs")
+                .long("omit-failed-runs")
+                .action(ArgAction::SetTrue)
+                .requires("ignore-failure")
+                .help("Exclude failed runs from summary statistics while still reporting how many failed.")
+                .long_help(
+                    "Exclude failed runs from summary statistics while still reporting how many failed.\n\n\
+                     Requires '--ignore-failure' so that benchmark runs with non-zero exit codes \
+                     can complete. Failed runs are omitted from mean, median, standard deviation, \
+                     and exported timing data.\n\n\
+                     Example:\n\n  \
+                       joulex --ignore-failure --omit-failed-runs --runs 20 './flaky-test.sh'",
+                ),
+        )
+        .arg(
             Arg::new("style")
                 .long("style")
                 .action(ArgAction::Set)

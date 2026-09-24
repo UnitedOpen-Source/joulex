@@ -272,6 +272,9 @@ pub struct Options {
 
     /// Execution schedule mode
     pub schedule: ScheduleMode,
+
+    /// Whether to exclude failed runs from summary statistics
+    pub omit_failed_runs: bool,
 }
 
 impl Default for Options {
@@ -299,6 +302,7 @@ impl Default for Options {
             filter_failed: false,
             suppress_outlier_warnings: false,
             schedule: ScheduleMode::Grouped,
+            omit_failed_runs: false,
         }
     }
 }
@@ -504,6 +508,13 @@ impl Options {
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
+        options.omit_failed_runs = matches.get_flag("omit-failed-runs");
+
+        if options.omit_failed_runs
+            && options.command_failure_action == CmdFailureAction::RaiseError
+        {
+            return Err(OptionsError::OmitFailedRunsRequiresIgnoreFailure);
+        }
 
         options.schedule = if matches.get_flag("round-robin") {
             ScheduleMode::RoundRobin
