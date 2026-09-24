@@ -291,7 +291,9 @@ pub fn build_command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Exclude results with non-zero exit codes from the relative speed \
                        comparison and from exported results. This is useful when using \
-                       '--ignore-failure' with parameter scans where some combinations fail."),
+                       '--ignore-failure' with parameter scans where some combinations fail. \
+                       Note: when combined with '--omit-failed-runs', benchmarks with partially \
+                       failed runs are retained because failed runs were already omitted."),
         )
         .arg(
             Arg::new("omit-failed-runs")
@@ -303,7 +305,9 @@ pub fn build_command() -> Command {
                     "Exclude failed runs from summary statistics while still reporting how many failed.\n\n\
                      Requires '--ignore-failure' so that benchmark runs with non-zero exit codes \
                      can complete. Failed runs are omitted from mean, median, standard deviation, \
-                     and exported timing data.\n\n\
+                     and exported timing data (and recorded in 'omitted_failed_runs').\n\n\
+                     When combined with '--filter-failed', the benchmark is kept as long as at least \
+                     one run succeeded.\n\n\
                      Example:\n\n  \
                        joulex --ignore-failure --omit-failed-runs --runs 20 './flaky-test.sh'",
                 ),

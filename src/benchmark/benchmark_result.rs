@@ -77,6 +77,19 @@ pub struct BenchmarkResult {
     /// Parameter values for this benchmark
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameters: BTreeMap<String, String>,
+
+    /// Benchmark runs omitted due to --omit-failed-runs
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omitted_failed_runs: Vec<OmittedRun>,
+}
+
+/// Information about a benchmark run that was omitted due to failure.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OmittedRun {
+    /// Zero-based index of the benchmark run
+    pub index: usize,
+    /// The exit code of the failed command, or None if terminated by signal
+    pub exit_code: Option<i32>,
 }
 
 impl BenchmarkResult {
@@ -119,5 +132,38 @@ mod tests {
     fn test_has_failure_empty() {
         let r = result_with_exit_codes(vec![]);
         assert!(!r.has_failure());
+    }
+
+    #[test]
+    fn test_omitted_failed_runs_serde() {
+        let r = BenchmarkResult {
+            command: "cmd".into(),
+            times: Some(vec![0.1, 0.2]),
+            exit_codes: vec![Some(0), Some(0)],
+            omitted_failed_runs: vec![OmittedRun {
+                index: 1,
+                exit_code: Some(42),
+            }],
+            ..Default::default()
+        };
+        assert!(!r.has_failure());
+
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(json.contains("\"omitted_failed_runs\":[{\"index\":1,\"exit_code\":42}]"));
+
+        let deserialized: BenchmarkResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, r);
+        assert!(!deserialized.has_failure());
+    }
+
+    #[test]
+    fn test_omitted_failed_runs_empty_skips_serializing() {
+        let r = BenchmarkResult {
+            command: "cmd".into(),
+            exit_codes: vec![Some(0)],
+            ..Default::default()
+        };
+        let json = serde_json::to_string(&r).unwrap();
+        assert!(!json.contains("omitted_failed_runs"));
     }
 }

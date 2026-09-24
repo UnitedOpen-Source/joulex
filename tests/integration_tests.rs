@@ -1214,7 +1214,61 @@ fn omit_failed_runs_json_export() {
     let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
     let result = &parsed["results"][0];
     let times = result["times"].as_array().unwrap();
+    let exit_codes = result["exit_codes"].as_array().unwrap();
     assert_eq!(times.len(), 3); // 5 runs - 2 failed = 3 kept
+    assert_eq!(exit_codes.len(), 3);
+    for code in exit_codes {
+        assert_eq!(code, &serde_json::json!(0));
+    }
+
+    let omitted = result["omitted_failed_runs"].as_array().unwrap();
+    assert_eq!(omitted.len(), 2);
+    assert_eq!(omitted[0]["index"], 1);
+    assert_eq!(omitted[0]["exit_code"], 1);
+    assert_eq!(omitted[1]["index"], 3);
+    assert_eq!(omitted[1]["exit_code"], 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn omit_failed_runs_with_filter_failed_preserves_successful_runs() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("-i")
+        .arg("--omit-failed-runs")
+        .arg("--filter-failed")
+        .arg("-r=6")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sh -c 'if [ \"$JOULEX_ITERATION\" = \"2\" ]; then exit 1; else sleep 0.01; fi'")
+        .arg("sleep 0.02")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    let results = parsed["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2);
+
+    let first_cmd = &results[0];
+    let times = first_cmd["times"].as_array().unwrap();
+    let exit_codes = first_cmd["exit_codes"].as_array().unwrap();
+    assert_eq!(times.len(), 5);
+    assert_eq!(exit_codes.len(), 5);
+    for code in exit_codes {
+        assert_eq!(code, &serde_json::json!(0));
+    }
+    let omitted = first_cmd["omitted_failed_runs"].as_array().unwrap();
+    assert_eq!(omitted.len(), 1);
+    assert_eq!(omitted[0]["index"], 2);
+    assert_eq!(omitted[0]["exit_code"], 1);
+
+    let second_cmd = &results[1];
+    assert!(second_cmd.get("omitted_failed_runs").is_none());
 }
 
 #[test]

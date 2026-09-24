@@ -123,6 +123,7 @@ fn test_csv() {
                 params.insert("bar".into(), "two".into());
                 params
             },
+            omitted_failed_runs: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("command_b"),
@@ -149,6 +150,7 @@ fn test_csv() {
                 params.insert("bar".into(), "seven".into());
                 params
             },
+            omitted_failed_runs: Vec::new(),
         },
     ];
 
@@ -196,6 +198,7 @@ fn test_csv_formula_injection_sanitization() {
             params.insert("safe_param".into(), "value".into());
             params
         },
+        omitted_failed_runs: Vec::new(),
     }];
 
     let actual = String::from_utf8(
@@ -272,6 +275,7 @@ fn test_csv_with_reference_command() {
             energy_joules: None,
             exit_codes: vec![Some(0)],
             parameters: BTreeMap::new(),
+            omitted_failed_runs: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("param_cmd"),
@@ -297,6 +301,7 @@ fn test_csv_with_reference_command() {
                 params.insert("secs".into(), "2".into());
                 params
             },
+            omitted_failed_runs: Vec::new(),
         },
     ];
 
@@ -344,6 +349,7 @@ fn test_csv_heterogeneous_parameters() {
                 params.insert("alpha".into(), "val1".into());
                 params
             },
+            omitted_failed_runs: Vec::new(),
         },
         BenchmarkResult {
             command: String::from("cmd_b"),
@@ -369,6 +375,7 @@ fn test_csv_heterogeneous_parameters() {
                 params.insert("beta".into(), "val2".into());
                 params
             },
+            omitted_failed_runs: Vec::new(),
         },
     ];
 
