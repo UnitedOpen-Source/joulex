@@ -20,7 +20,7 @@ use crate::stats::deep::compute_deep_stats;
 use crate::util::exit_code::extract_exit_code;
 use crate::util::min_max::{max, min};
 use crate::util::units::{format_bytes, Second};
-use benchmark_result::BenchmarkResult;
+use benchmark_result::{BenchmarkResult, OmittedRun};
 use timing_result::TimingResult;
 
 use anyhow::{anyhow, bail, Result};
@@ -47,7 +47,7 @@ pub struct BenchmarkRunner<'a> {
     pub times_user: Vec<Second>,
     pub times_system: Vec<Second>,
     pub memory_usage_byte: Vec<u64>,
-    pub energy_measurements: Vec<f64>,
+    pub energy_measurements: Vec<Option<f64>>,
     pub exit_codes: Vec<Option<i32>>,
     pub all_succeeded: bool,
     pub count: u64,
@@ -264,9 +264,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
         self.memory_usage_byte.push(res.memory_usage_byte);
-        if let Some(e) = energy_initial {
-            self.energy_measurements.push(e);
-        }
+        self.energy_measurements.push(energy_initial);
         self.exit_codes.push(extract_exit_code(status));
         self.all_succeeded = self.all_succeeded && success;
 
@@ -292,9 +290,7 @@ impl<'a> BenchmarkRunner<'a> {
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
         self.memory_usage_byte.push(res.memory_usage_byte);
-        if let Some(e) = energy {
-            self.energy_measurements.push(e);
-        }
+        self.energy_measurements.push(energy);
         self.exit_codes.push(extract_exit_code(status));
         self.all_succeeded = self.all_succeeded && success;
 
@@ -305,24 +301,23 @@ impl<'a> BenchmarkRunner<'a> {
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
         let original_run_count = self.times_real.len();
-        let mut num_omitted_failed_runs = 0;
+        let mut omitted_failed_runs = Vec::new();
 
         if self.options.omit_failed_runs {
-            let keep_indices: Vec<usize> = self
-                .exit_codes
-                .iter()
-                .enumerate()
-                .filter(|&(_, exit_code)| exit_code == &Some(0))
-                .map(|(index, _)| index)
-                .collect();
-
-            num_omitted_failed_runs = original_run_count.saturating_sub(keep_indices.len());
+            let mut keep_indices = Vec::new();
+            for (index, &exit_code) in self.exit_codes.iter().enumerate() {
+                if exit_code == Some(0) {
+                    keep_indices.push(index);
+                } else {
+                    omitted_failed_runs.push(OmittedRun { index, exit_code });
+                }
+            }
 
             if keep_indices.is_empty() {
                 bail!("All benchmark runs failed. No successful runs to compute statistics from.");
             }
 
-            if num_omitted_failed_runs > 0 {
+            if !omitted_failed_runs.is_empty() {
                 self.times_real = keep_indices
                     .iter()
                     .map(|&index| self.times_real[index])
@@ -339,16 +334,20 @@ impl<'a> BenchmarkRunner<'a> {
                     .iter()
                     .map(|&index| self.memory_usage_byte[index])
                     .collect();
-                if !self.energy_measurements.is_empty()
-                    && self.energy_measurements.len() == original_run_count
-                {
+                if self.energy_measurements.len() == original_run_count {
                     self.energy_measurements = keep_indices
                         .iter()
                         .map(|&index| self.energy_measurements[index])
                         .collect();
                 }
+                self.exit_codes = keep_indices
+                    .iter()
+                    .map(|&index| self.exit_codes[index])
+                    .collect();
             }
         }
+
+        let num_omitted_failed_runs = omitted_failed_runs.len();
 
         let t_num = self.times_real.len();
         let t_mean = mean(&self.times_real);
@@ -448,13 +447,12 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if self.options.measure_energy {
-                if !self.energy_measurements.is_empty() {
-                    let mean_joules = mean(&self.energy_measurements);
-                    let stddev_joules = if self.energy_measurements.len() > 1 {
-                        Some(standard_deviation(
-                            &self.energy_measurements,
-                            Some(mean_joules),
-                        ))
+                let valid_energy: Vec<f64> =
+                    self.energy_measurements.iter().filter_map(|&e| e).collect();
+                if !valid_energy.is_empty() {
+                    let mean_joules = mean(&valid_energy);
+                    let stddev_joules = if valid_energy.len() > 1 {
+                        Some(standard_deviation(&valid_energy, Some(mean_joules)))
                     } else {
                         None
                     };
@@ -566,10 +564,11 @@ impl<'a> BenchmarkRunner<'a> {
             println!(" ");
         }
 
-        let (mean_energy, mean_watts, energy_all) = if !self.energy_measurements.is_empty() {
-            let m_j = mean(&self.energy_measurements);
+        let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
+        let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
+            let m_j = mean(&valid_energy);
             let m_w = if t_mean > 0.0 { m_j / t_mean } else { 0.0 };
-            (Some(m_j), Some(m_w), Some(self.energy_measurements))
+            (Some(m_j), Some(m_w), Some(valid_energy))
         } else {
             (None, None, None)
         };
@@ -599,6 +598,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .iter()
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
+            omitted_failed_runs,
         })
     }
 }
