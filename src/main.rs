@@ -21,6 +21,7 @@ pub mod command;
 pub mod energy;
 pub mod error;
 pub mod export;
+pub mod import;
 pub mod options;
 pub mod outlier_detection;
 pub mod output;
@@ -62,9 +63,24 @@ fn run() -> Result<()> {
         options.sort_order_exports,
     )?;
 
+    let mut imported_results = vec![];
+    if let Some(files) = cli_arguments.get_many::<String>("import-json") {
+        for file in files {
+            imported_results.extend(crate::import::import_json(file)?);
+        }
+    }
+
+    if commands.iter().count() == 0
+        && options.reference_command.is_none()
+        && imported_results.is_empty()
+    {
+        anyhow::bail!("No commands to benchmark and no JSON files imported.");
+    }
+
     options.validate_against_command_list(&commands)?;
 
     let mut scheduler = Scheduler::new(&commands, &options, &export_manager);
+    scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
     scheduler.print_relative_speed_comparison();
     scheduler.final_export()?;

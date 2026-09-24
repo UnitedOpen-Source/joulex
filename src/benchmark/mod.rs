@@ -35,6 +35,7 @@ pub const MIN_EXECUTION_TIME: Second = 5e-3;
 
 pub struct Benchmark<'a> {
     number: usize,
+    display_number: usize,
     command: &'a Command<'a>,
     options: &'a Options,
     executor: &'a dyn Executor,
@@ -43,12 +44,14 @@ pub struct Benchmark<'a> {
 impl<'a> Benchmark<'a> {
     pub fn new(
         number: usize,
+        display_number: usize,
         command: &'a Command<'a>,
         options: &'a Options,
         executor: &'a dyn Executor,
     ) -> Self {
         Benchmark {
             number,
+            display_number,
             command,
             options,
             executor,
@@ -162,7 +165,7 @@ impl<'a> Benchmark<'a> {
             println!(
                 "{}{}: {}",
                 "Benchmark ".bold(),
-                (self.number + 1).to_string().bold(),
+                (self.display_number + 1).to_string().bold(),
                 self.command.get_name_with_unused_parameters(),
             );
         }

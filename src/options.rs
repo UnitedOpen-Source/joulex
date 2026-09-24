@@ -492,6 +492,10 @@ impl Options {
         let has_reference_command = self.reference_command.is_some();
         let num_commands = commands.num_commands(has_reference_command);
 
+        if num_commands == 0 {
+            return Ok(());
+        }
+
         if let Some(preparation_command) = &self.preparation_command {
             ensure!(
                 preparation_command.len() <= 1 || num_commands == preparation_command.len(),
