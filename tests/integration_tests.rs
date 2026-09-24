@@ -1040,3 +1040,87 @@ fn json_export_includes_cpu_percent() {
     let contents = std::fs::read_to_string(export_path).unwrap();
     assert!(contents.contains("\"cpu_percent\":"));
 }
+
+#[test]
+fn multiple_parameter_scans_csv_export() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.csv");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--export-csv")
+        .arg(&export_path)
+        .arg("-P")
+        .arg("a")
+        .arg("1")
+        .arg("2")
+        .arg("-P")
+        .arg("b")
+        .arg("10")
+        .arg("11")
+        .arg("echo {a} {b}")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    let lines: Vec<&str> = contents.lines().collect();
+    assert_eq!(lines.len(), 5); // 1 header line + 4 data rows
+    assert!(lines[0].contains("parameter_a"));
+    assert!(lines[0].contains("parameter_b"));
+}
+
+#[test]
+fn multiple_parameter_scans_and_list_combined_json_export() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("-P")
+        .arg("a")
+        .arg("1")
+        .arg("2")
+        .arg("-L")
+        .arg("opt")
+        .arg("x,y")
+        .arg("echo {a} {opt}")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+    let results = parsed["results"].as_array().unwrap();
+    assert_eq!(results.len(), 4);
+    for entry in results {
+        let params = entry["parameters"].as_object().unwrap();
+        assert!(params.contains_key("a"));
+        assert!(params.contains_key("opt"));
+    }
+}
+
+#[test]
+fn multiple_parameter_scans_with_step_size_cli_error() {
+    hyperfine()
+        .arg("-P")
+        .arg("a")
+        .arg("1")
+        .arg("5")
+        .arg("-P")
+        .arg("b")
+        .arg("1")
+        .arg("5")
+        .arg("-D")
+        .arg("2")
+        .arg("echo {a} {b}")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified",
+        ));
+}

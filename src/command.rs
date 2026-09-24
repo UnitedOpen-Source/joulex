@@ -2,17 +2,16 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
+#[cfg(test)]
+use crate::parameter::range_step::Numeric;
 use crate::parameter::tokenize::tokenize;
 use crate::parameter::ParameterValue;
 use crate::{
     error::{OptionsError, ParameterScanError},
-    parameter::{
-        range_step::{Numeric, RangeStep},
-        ParameterNameAndValue,
-    },
+    parameter::{range_step::RangeStep, ParameterNameAndValue},
 };
 
-use clap::{parser::ValuesRef, ArgMatches};
+use clap::ArgMatches;
 
 use anyhow::{bail, Context, Result};
 use rust_decimal::Decimal;
@@ -131,6 +130,7 @@ impl<'a> Command<'a> {
 }
 
 /// A collection of commands that should be benchmarked
+#[derive(Debug)]
 pub struct Commands<'a>(Vec<Command<'a>>);
 
 impl<'a> Commands<'a> {
@@ -142,45 +142,55 @@ impl<'a> Commands<'a> {
             .map(|v| v.as_str())
             .collect::<Vec<_>>();
 
-        if let Some(args) = matches.get_many::<String>("parameter-scan") {
-            let step_size = matches
-                .get_one::<String>("parameter-step-size")
-                .map(|s| s.as_str());
-            Ok(Self(Self::get_parameter_scan_commands(
-                command_names,
-                command_strings,
-                args,
-                step_size,
-            )?))
-        } else if matches.get_many::<String>("parameter-list").is_some()
-            || matches.get_many::<String>("parameter-file").is_some()
-        {
+        let has_parameters = matches.get_many::<String>("parameter-scan").is_some()
+            || matches.get_many::<String>("parameter-list").is_some()
+            || matches.get_many::<String>("parameter-file").is_some();
+
+        if has_parameters {
             let command_names = command_names.map_or(vec![], |names| {
                 names.map(|v| v.as_str()).collect::<Vec<_>>()
             });
 
-            let mut param_names_and_values: Vec<(&str, Vec<String>)> = Vec::new();
+            let mut param_names_and_values: Vec<(&str, Vec<ParameterValue>)> = Vec::new();
+
+            if let Some(args) = matches.get_many::<String>("parameter-scan") {
+                let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
+                let step_size = matches
+                    .get_one::<String>("parameter-step-size")
+                    .map(|s| s.as_str());
+
+                let (chunks, _) = args.as_chunks::<3>();
+                if step_size.is_some() && chunks.len() > 1 {
+                    bail!("The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified");
+                }
+
+                for &[name, min, max] in chunks {
+                    let values = Self::parse_parameter_scan(min, max, step_size)?;
+                    param_names_and_values.push((name, values));
+                }
+            }
 
             if let Some(args) = matches.get_many::<String>("parameter-list") {
                 let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
-                for pair in args.chunks_exact(2) {
-                    let name = pair[0];
-                    let list_str = pair[1];
-                    param_names_and_values.push((name, tokenize(list_str)));
+                for &[name, list_str] in args.as_chunks::<2>().0 {
+                    let values = tokenize(list_str)
+                        .into_iter()
+                        .map(ParameterValue::Text)
+                        .collect();
+                    param_names_and_values.push((name, values));
                 }
             }
 
             if let Some(args) = matches.get_many::<String>("parameter-file") {
                 let args: Vec<_> = args.map(|v| v.as_str()).collect::<Vec<_>>();
-                for pair in args.chunks_exact(2) {
-                    let name = pair[0];
-                    let file_path = pair[1];
+                for &[name, file_path] in args.as_chunks::<2>().0 {
                     let content = std::fs::read_to_string(file_path)
                         .with_context(|| format!("Could not read parameter file '{file_path}'"))?;
-                    let lines: Vec<String> = content
+                    let lines: Vec<ParameterValue> = content
                         .lines()
                         .map(|l| l.trim_end_matches('\r').to_string())
                         .filter(|l| !l.is_empty())
+                        .map(ParameterValue::Text)
                         .collect();
                     if lines.is_empty() {
                         bail!("Parameter file '{file_path}' contains no values");
@@ -193,7 +203,7 @@ impl<'a> Commands<'a> {
                 let duplicates =
                     Self::find_duplicates(param_names_and_values.iter().map(|(name, _)| *name));
                 if !duplicates.is_empty() {
-                    bail!("Duplicate parameter names: {}", &duplicates.join(", "));
+                    bail!("Duplicate parameter names: {}", duplicates.join(", "));
                 }
             }
 
@@ -234,7 +244,7 @@ impl<'a> Commands<'a> {
                 let parameters: Vec<_> = param_names_and_values
                     .iter()
                     .zip(params_indices)
-                    .map(|((name, values), i)| (*name, ParameterValue::Text(values[*i].clone())))
+                    .map(|((name, values), i)| (*name, values[*i].clone()))
                     .collect();
                 commands.push(Command::new_parametrized(
                     name,
@@ -292,6 +302,7 @@ impl<'a> Commands<'a> {
             .collect()
     }
 
+    #[cfg(test)]
     fn build_parameter_scan_commands<'b, T: Numeric>(
         param_name: &'b str,
         param_min: T,
@@ -333,33 +344,21 @@ impl<'a> Commands<'a> {
         Ok(commands)
     }
 
-    fn get_parameter_scan_commands<'b>(
-        command_names: Option<ValuesRef<'b, String>>,
-        command_strings: Vec<&'b str>,
-        mut vals: ValuesRef<'b, String>,
+    fn parse_parameter_scan(
+        param_min: &str,
+        param_max: &str,
         step: Option<&str>,
-    ) -> Result<Vec<Command<'b>>, ParameterScanError> {
-        let command_names = command_names.map_or(vec![], |names| {
-            names.map(|v| v.as_str()).collect::<Vec<_>>()
-        });
-        let param_name = vals.next().unwrap().as_str();
-        let param_min = vals.next().unwrap().as_str();
-        let param_max = vals.next().unwrap().as_str();
-
+    ) -> Result<Vec<ParameterValue>, ParameterScanError> {
         // attempt to parse as integers
         if let (Ok(param_min), Ok(param_max), Ok(step)) = (
             param_min.parse::<i32>(),
             param_max.parse::<i32>(),
             step.unwrap_or("1").parse::<i32>(),
         ) {
-            return Self::build_parameter_scan_commands(
-                param_name,
-                param_min,
-                param_max,
-                step,
-                command_names,
-                command_strings,
-            );
+            let param_range = RangeStep::new(param_min, param_max, step)?;
+            return Ok(param_range
+                .map(|v| ParameterValue::Numeric(v.into()))
+                .collect());
         }
 
         // try parsing them as decimals
@@ -371,14 +370,10 @@ impl<'a> Commands<'a> {
         }
 
         let step = Decimal::from_str(step.unwrap())?;
-        Self::build_parameter_scan_commands(
-            param_name,
-            param_min,
-            param_max,
-            step,
-            command_names,
-            command_strings,
-        )
+        let param_range = RangeStep::new(param_min, param_max, step)?;
+        Ok(param_range
+            .map(|v| ParameterValue::Numeric(v.into()))
+            .collect())
     }
 }
 
@@ -659,4 +654,123 @@ fn test_parameter_file_and_list_combined() {
     ]);
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     assert_eq!(commands.iter().count(), 4);
+}
+
+#[test]
+fn test_multiple_parameter_scans() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "a",
+        "1",
+        "2",
+        "-P",
+        "b",
+        "10",
+        "11",
+        "echo {a} {b}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap().0;
+    assert_eq!(commands.len(), 4);
+    let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(
+        lines,
+        vec!["echo 1 10", "echo 2 10", "echo 1 11", "echo 2 11",]
+    );
+}
+
+#[test]
+fn test_parameter_scan_and_list_combined() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "threads",
+        "1",
+        "2",
+        "-L",
+        "opt",
+        "O1,O2",
+        "make -j {threads} {opt}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap().0;
+    assert_eq!(commands.len(), 4);
+    let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(
+        lines,
+        vec![
+            "make -j 1 O1",
+            "make -j 2 O1",
+            "make -j 1 O2",
+            "make -j 2 O2",
+        ]
+    );
+}
+
+#[test]
+fn test_parameter_scan_and_file_combined() {
+    use crate::cli::get_cli_arguments;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    let mut temp = NamedTempFile::new().unwrap();
+    writeln!(temp, "alpha\nbeta").unwrap();
+    let temp_path = temp.path().to_str().unwrap().to_string();
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "iter",
+        "1",
+        "2",
+        "-F",
+        "target",
+        &temp_path,
+        "run {iter} {target}",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap().0;
+    assert_eq!(commands.len(), 4);
+    let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(
+        lines,
+        vec!["run 1 alpha", "run 2 alpha", "run 1 beta", "run 2 beta",]
+    );
+}
+
+#[test]
+fn test_multiple_parameter_scans_with_step_size_fails() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec![
+        "joulex",
+        "-P",
+        "a",
+        "1",
+        "5",
+        "-P",
+        "b",
+        "1",
+        "5",
+        "-D",
+        "2",
+        "echo {a} {b}",
+    ]);
+    let err = Commands::from_cli_arguments(&matches).unwrap_err();
+    assert!(err
+        .to_string()
+        .contains("The '--parameter-step-size' ('-D') option cannot be used when multiple '--parameter-scan' ('-P') options are specified"));
+}
+
+#[test]
+fn test_single_parameter_scan_with_step_size_succeeds() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec!["joulex", "-P", "a", "1", "5", "-D", "2", "echo {a}"]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap().0;
+    assert_eq!(commands.len(), 3);
+    let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(lines, vec!["echo 1", "echo 3", "echo 5"]);
 }

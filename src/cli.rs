@@ -169,16 +169,19 @@ pub fn build_command() -> Command {
             Arg::new("parameter-scan")
                 .long("parameter-scan")
                 .short('P')
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
                 .allow_hyphen_values(true)
+                .num_args(3)
                 .value_names(["VAR", "MIN", "MAX"])
                 .help(
                     "Perform benchmark runs for each value in the range MIN..MAX. Replaces the \
                      string '{VAR}' in each command by the current parameter value.\n\n  \
-                     Example:  hyperfine -P threads 1 8 'make -j {threads}'\n\n\
+                     Example:  joulex -P threads 1 8 'make -j {threads}'\n\n\
                      This performs benchmarks for 'make -j 1', 'make -j 2', …, 'make -j 8'.\n\n\
+                     The option can be specified multiple times and combined with --parameter-list \
+                     or --parameter-file to run benchmarks for all possible parameter combinations.\n\n\
                      To have the value increase following different patterns, use shell arithmetics.\n\n  \
-                     Example: hyperfine -P size 0 3 'sleep $((2**{size}))'\n\n\
+                     Example: joulex -P size 0 3 'sleep $((2**{size}))'\n\n\
                      This performs benchmarks with power of 2 increases: 'sleep 1', 'sleep 2', 'sleep 4', …\n\
                      The exact syntax may vary depending on your shell and OS."
                 ),
@@ -193,7 +196,7 @@ pub fn build_command() -> Command {
                 .help(
                     "This argument requires --parameter-scan to be specified as well. \
                      Traverse the range MIN..MAX in steps of DELTA.\n\n  \
-                     Example:  hyperfine -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
+                     Example:  joulex -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
                      This performs benchmarks for 'sleep 0.3', 'sleep 0.5' and 'sleep 0.7'.",
                 ),
         )
@@ -203,15 +206,15 @@ pub fn build_command() -> Command {
                 .short('L')
                 .action(ArgAction::Append)
                 .allow_hyphen_values(true)
+                .num_args(2)
                 .value_names(["VAR", "VALUES"])
-                .conflicts_with_all(["parameter-scan", "parameter-step-size"])
                 .help(
                     "Perform benchmark runs for each value in the comma-separated list VALUES. \
                      Replaces the string '{VAR}' in each command by the current parameter value\
-                     .\n\nExample:  hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'\n\n\
+                     .\n\nExample:  joulex -L compiler gcc,clang '{compiler} -O2 main.cpp'\n\n\
                      This performs benchmarks for 'gcc -O2 main.cpp' and 'clang -O2 main.cpp'.\n\n\
-                     The option can be specified multiple times to run benchmarks for all \
-                     possible parameter combinations.\n"
+                     The option can be specified multiple times and combined with --parameter-scan \
+                     or --parameter-file to run benchmarks for all possible parameter combinations.\n"
                 ),
         )
         .arg(
@@ -219,14 +222,14 @@ pub fn build_command() -> Command {
                 .long("parameter-file")
                 .short('F')
                 .action(ArgAction::Append)
+                .num_args(2)
                 .value_names(["VAR", "FILE"])
-                .conflicts_with_all(["parameter-scan", "parameter-step-size"])
                 .help(
                     "Perform benchmark runs for each line in FILE. \
                      Replaces the string '{VAR}' in each command by the current parameter value.\n\n\
                      Example:  joulex -F url urls.txt 'curl {url}'\n\n\
-                     The option can be specified multiple times and combined with --parameter-list \
-                     to run benchmarks for all possible parameter combinations.\n"
+                     The option can be specified multiple times and combined with --parameter-scan \
+                     or --parameter-list to run benchmarks for all possible parameter combinations.\n"
                 ),
         )
         .arg(
