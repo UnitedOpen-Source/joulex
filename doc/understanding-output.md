@@ -82,7 +82,10 @@ Summary
 | `-c`, `--cleanup CMD` | once **after all runs** of a benchmark | no |
 
 `JOULEX_ITERATION` (and `HYPERFINE_ITERATION`) is set to the run index (`0`, `1`, … or
-`warmup-0`, …) for the command, `--prepare` and `--conclude`. The complete flow is shown in
+`warmup-0`, …) for the command, `--prepare` and `--conclude`. The same value is available as
+the `{iteration}` placeholder, which also works with `-N`/`--shell=none`, e.g.
+`joulex -N --prepare 'mkdir -p out/{iteration}' 'tool --out out/{iteration} input'`. It is
+not expanded in `--setup`/`--cleanup`, which don't belong to a single run. The complete flow is shown in
 [execution-order.png](execution-order.png).
 
 With `--reference`, the reference command is benchmarked first, with the same

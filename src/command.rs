@@ -16,6 +16,12 @@ use clap::ArgMatches;
 use anyhow::{anyhow, bail, Context, Result};
 use rust_decimal::Decimal;
 
+/// Name of the built-in placeholder `{iteration}`, which expands to the same
+/// value as the `JOULEX_ITERATION` environment variable (e.g. `0`, `1`, or
+/// `warmup-0`). Unlike the environment variable, it also works with
+/// `--shell=none`.
+pub const ITERATION_PLACEHOLDER: &str = "iteration";
+
 /// A command that should be benchmarked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command<'a> {
@@ -71,6 +77,23 @@ impl<'a> Command<'a> {
         };
 
         format!("{}{}", self.get_name(), parameters)
+    }
+
+    /// Return a copy of this command in which `{iteration}` expands to `value`.
+    /// Without a value (setup/cleanup and other non-benchmark runs), or when
+    /// the placeholder isn't used, the command is returned unchanged.
+    pub fn with_iteration(&self, value: Option<String>) -> std::borrow::Cow<'_, Command<'a>> {
+        let placeholder = format!("{{{ITERATION_PLACEHOLDER}}}");
+        match value {
+            Some(value) if self.expression.contains(&placeholder) => {
+                let mut command = self.clone();
+                command
+                    .parameters
+                    .push((ITERATION_PLACEHOLDER, ParameterValue::Text(value)));
+                std::borrow::Cow::Owned(command)
+            }
+            _ => std::borrow::Cow::Borrowed(self),
+        }
     }
 
     pub fn get_command_line(&self) -> String {
@@ -197,6 +220,16 @@ impl<'a> Commands<'a> {
                     }
                     param_names_and_values.push((name, lines));
                 }
+            }
+
+            if param_names_and_values
+                .iter()
+                .any(|(name, _)| *name == ITERATION_PLACEHOLDER)
+            {
+                bail!(
+                    "The parameter name '{ITERATION_PLACEHOLDER}' is reserved: '{{{ITERATION_PLACEHOLDER}}}' \
+                     always expands to the current iteration (like $JOULEX_ITERATION)"
+                );
             }
 
             {
@@ -862,4 +895,35 @@ fn test_parameter_combinations_max_benchmarks_override() {
     ]);
     let commands = Commands::from_cli_arguments(&matches_ok).unwrap().0;
     assert_eq!(commands.len(), 100);
+}
+
+#[test]
+fn test_with_iteration_substitutes_placeholder() {
+    let command = Command::new(None, "echo run-{iteration} {iteration}");
+    assert_eq!(
+        command.with_iteration(Some("3".into())).get_command_line(),
+        "echo run-3 3"
+    );
+    // Without an iteration value (setup/cleanup), the command is unchanged
+    assert_eq!(
+        command.with_iteration(None).get_command_line(),
+        "echo run-{iteration} {iteration}"
+    );
+    // Commands without the placeholder are borrowed, not cloned
+    let plain = Command::new(None, "echo hi");
+    assert!(matches!(
+        plain.with_iteration(Some("0".into())),
+        std::borrow::Cow::Borrowed(_)
+    ));
+    // The display name keeps the template
+    assert_eq!(command.get_name(), "echo run-{iteration} {iteration}");
+}
+
+#[test]
+fn test_iteration_is_a_reserved_parameter_name() {
+    use crate::cli::get_cli_arguments;
+
+    let matches = get_cli_arguments(vec!["joulex", "-L", "iteration", "1,2", "echo {iteration}"]);
+    let err = Commands::from_cli_arguments(&matches).unwrap_err();
+    assert!(err.to_string().contains("is reserved"));
 }
