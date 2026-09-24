@@ -1494,3 +1494,53 @@ fn imported_command_names_cannot_inject_terminal_escape_sequences() {
     let markdown = std::fs::read_to_string(&markdown_path).unwrap();
     assert!(!markdown.contains('\u{1b}'), "raw ESC leaked to the export");
 }
+
+#[cfg(unix)]
+#[test]
+fn own_exports_pass_import_validation_including_omitted_failed_runs() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("omitted.json");
+
+    hyperfine()
+        .arg("--runs=4")
+        .arg("--ignore-failure")
+        .arg("--omit-failed-runs")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sh -c '[ \"$JOULEX_ITERATION\" = 2 ] && exit 1; exit 0'")
+        .assert()
+        .success();
+
+    hyperfine()
+        .arg("--import-json")
+        .arg(&export_path)
+        .assert()
+        .success();
+}
+
+#[test]
+fn fails_to_import_json_with_invalid_results() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let import_path = tempdir.path().join("invalid.json");
+    std::fs::write(
+        &import_path,
+        r#"{"results":[{"command":"a","mean":-1,"stddev":0,"median":1,"user":0,"system":0,"min":0,"max":1}]}"#,
+    )
+    .unwrap();
+
+    hyperfine()
+        .arg("--import-json")
+        .arg(&import_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Invalid benchmark result #1 ('a')",
+        ))
+        .stderr(predicate::str::contains(
+            "'mean' must be a finite, non-negative number",
+        ));
+}
