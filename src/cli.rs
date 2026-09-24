@@ -248,6 +248,14 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("max-benchmarks")
+                .long("max-benchmarks")
+                .action(ArgAction::Set)
+                .value_name("NUM")
+                .value_parser(clap::value_parser!(usize))
+                .help("Maximum allowed total number of benchmark combinations when using parameters (default: 100000)."),
+        )
+        .arg(
             Arg::new("shell")
                 .long("shell")
                 .short('S')
