@@ -1544,3 +1544,68 @@ fn fails_to_import_json_with_invalid_results() {
             "'mean' must be a finite, non-negative number",
         ));
 }
+
+#[test]
+fn round_robin_rejects_parametrized_setup() {
+    hyperfine_debug()
+        .arg("--schedule=round-robin")
+        .arg("-P")
+        .arg("val")
+        .arg("1")
+        .arg("2")
+        .arg("--setup=sleep 0.00{val}")
+        .arg("sleep 0.1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "The '--setup' and/or '--cleanup' options differ between benchmarks (due to parameter substitution) and cannot be combined with '--schedule round-robin'.",
+        ));
+}
+
+#[test]
+fn round_robin_rejects_parametrized_cleanup() {
+    hyperfine_debug()
+        .arg("--schedule=round-robin")
+        .arg("-P")
+        .arg("val")
+        .arg("1")
+        .arg("2")
+        .arg("--cleanup=sleep 0.00{val}")
+        .arg("sleep 0.1")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "The '--setup' and/or '--cleanup' options differ between benchmarks (due to parameter substitution) and cannot be combined with '--schedule round-robin'.",
+        ));
+}
+
+#[test]
+fn round_robin_allows_parametrized_setup_with_override_flag() {
+    hyperfine_debug()
+        .arg("--schedule=round-robin")
+        .arg("--allow-setup-with-round-robin")
+        .arg("-r=1")
+        .arg("-P")
+        .arg("val")
+        .arg("1")
+        .arg("2")
+        .arg("--setup=sleep 0.00{val}")
+        .arg("sleep 0.1")
+        .assert()
+        .success();
+}
+
+#[test]
+fn round_robin_allows_unparametrized_setup() {
+    hyperfine_debug()
+        .arg("--schedule=round-robin")
+        .arg("-r=1")
+        .arg("-P")
+        .arg("val")
+        .arg("1")
+        .arg("2")
+        .arg("--setup=sleep 0.001")
+        .arg("sleep 0.1")
+        .assert()
+        .success();
+}
