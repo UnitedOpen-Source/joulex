@@ -491,6 +491,20 @@ pub fn build_command() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Suppress statistical outlier warnings (useful for automated scripts and CI).")
         )
+        .arg(
+            Arg::new("schedule")
+                .long("schedule")
+                .value_name("MODE")
+                .value_parser(["grouped", "round-robin", "sequential", "interleaved"])
+                .default_value("grouped")
+                .help("Set benchmark execution schedule: 'grouped' (run all iterations per command) or 'round-robin' (interleave iterations across commands).")
+        )
+        .arg(
+            Arg::new("round-robin")
+                .long("round-robin")
+                .action(ArgAction::SetTrue)
+                .help("Shortcut for '--schedule round-robin' (interleave benchmark runs across commands).")
+        )
 }
 
 #[test]
