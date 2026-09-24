@@ -17,6 +17,7 @@ pub enum Warnings {
     OutliersDetected(OutlierWarningOptions),
     OffCpuTime(Second, Second, f64),
     FailedRunsOmitted { omitted: usize, total: usize },
+    TooManyOutliers { total: usize },
 }
 
 impl fmt::Display for Warnings {
@@ -82,6 +83,13 @@ impl fmt::Display for Warnings {
                     ratio_str = ratio_str,
                 )
             }
+            Warnings::TooManyOutliers { total } => write!(
+                f,
+                "Too many of the {total} runs (more than {:.0}%) look like outliers, so none were discarded \
+                 ('--discard-outliers'). The run time distribution is probably multimodal \
+                 (e.g. caching effects or a background process); inspect the individual run times.",
+                crate::outlier_detection::MAX_DISCARD_FRACTION * 100.0
+            ),
             Warnings::FailedRunsOmitted { omitted, total } => write!(
                 f,
                 "Omitted {omitted} of {total} benchmark runs with non-zero exit codes from the \

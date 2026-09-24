@@ -37,6 +37,30 @@ pub fn modified_zscores(xs: &[f64]) -> Vec<f64> {
     xs.iter().map(|&x| (x - x_median) / mad).collect()
 }
 
+/// Largest fraction of runs that `--discard-outliers` may remove. If more runs
+/// look like outliers, the distribution is probably multimodal, and silently
+/// dropping them would hide that.
+pub const MAX_DISCARD_FRACTION: f64 = 0.05;
+
+/// Indices of the data points whose modified Z-score exceeds `threshold`, or
+/// None if there are more of them than allowed: `max_fraction` of all points,
+/// but at least one (otherwise a single outlier could never be discarded with
+/// the default of 10 runs). Samples with fewer than 5 points never have
+/// outliers.
+pub fn outlier_indices(xs: &[f64], threshold: f64, max_fraction: f64) -> Option<Vec<usize>> {
+    if xs.len() < 5 {
+        return Some(vec![]);
+    }
+    let indices: Vec<usize> = modified_zscores(xs)
+        .iter()
+        .enumerate()
+        .filter(|(_, z)| z.abs() > threshold)
+        .map(|(i, _)| i)
+        .collect();
+    let allowed = ((max_fraction * xs.len() as f64).floor() as usize).max(1);
+    (indices.len() <= allowed).then_some(indices)
+}
+
 /// Return the number of outliers in a given sample. Outliers are defined as data points with a
 /// modified Z-score that is larger than `OUTLIER_THRESHOLD`.
 #[cfg(test)]
@@ -112,4 +136,39 @@ fn test_detect_outliers_if_mad_becomes_0() {
 
     let xs = [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 100.0, 100.0];
     assert_eq!(2, num_outliers(&xs));
+}
+
+#[test]
+fn test_outlier_indices() {
+    let mut xs = vec![1.0; 19];
+    xs.push(50.0);
+    assert_eq!(
+        outlier_indices(&xs, OUTLIER_THRESHOLD, 0.05),
+        Some(vec![19])
+    );
+
+    // too few points to judge
+    assert_eq!(
+        outlier_indices(&[1.0, 1.0, 1.0, 50.0], OUTLIER_THRESHOLD, 0.05),
+        Some(vec![])
+    );
+
+    // a single outlier is always allowed (5% of 10 runs would be 0)
+    let mut ten = vec![1.0; 9];
+    ten.push(50.0);
+    assert_eq!(
+        outlier_indices(&ten, OUTLIER_THRESHOLD, 0.05),
+        Some(vec![9])
+    );
+
+    // 3 of 20 points (15%) exceed the cap of max(1, 5%): refuse to discard anything
+    let mut bimodal = vec![1.0; 17];
+    bimodal.extend([50.0, 51.0, 52.0]);
+    assert_eq!(outlier_indices(&bimodal, OUTLIER_THRESHOLD, 0.05), None);
+
+    // no outliers
+    assert_eq!(
+        outlier_indices(&[1.0, 1.1, 0.9, 1.0, 1.05], OUTLIER_THRESHOLD, 0.05),
+        Some(vec![])
+    );
 }

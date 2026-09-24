@@ -192,6 +192,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         exit_codes: Vec::new(),
         parameters: BTreeMap::new(),
         omitted_failed_runs: Vec::new(),
+        discarded_outliers: Vec::new(),
     }
 }
 

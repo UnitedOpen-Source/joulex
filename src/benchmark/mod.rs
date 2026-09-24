@@ -12,7 +12,9 @@ use crate::energy::{get_energy_sampler, EnergySampler};
 use crate::options::{
     CmdFailureAction, CommandOutputPolicy, ExecutorKind, Options, OutputStyleOption,
 };
-use crate::outlier_detection::{modified_zscores, OUTLIER_THRESHOLD};
+use crate::outlier_detection::{
+    modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
+};
 use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 use crate::output::warnings::{OutlierWarningOptions, Warnings};
@@ -303,6 +305,22 @@ impl<'a> BenchmarkRunner<'a> {
         Ok(())
     }
 
+    /// Keep only the runs at `keep` (ascending indices) in every per-run vector.
+    fn retain_runs(&mut self, keep: &[usize]) {
+        fn select<T: Copy>(values: &[T], keep: &[usize]) -> Vec<T> {
+            keep.iter().map(|&index| values[index]).collect()
+        }
+        let run_count = self.times_real.len();
+        self.times_real = select(&self.times_real, keep);
+        self.times_user = select(&self.times_user, keep);
+        self.times_system = select(&self.times_system, keep);
+        self.memory_usage_byte = select(&self.memory_usage_byte, keep);
+        if self.energy_measurements.len() == run_count {
+            self.energy_measurements = select(&self.energy_measurements, keep);
+        }
+        self.exit_codes = select(&self.exit_codes, keep);
+    }
+
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
         let original_run_count = self.times_real.len();
         let mut omitted_failed_runs = Vec::new();
@@ -322,32 +340,28 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if !omitted_failed_runs.is_empty() {
-                self.times_real = keep_indices
-                    .iter()
-                    .map(|&index| self.times_real[index])
-                    .collect();
-                self.times_user = keep_indices
-                    .iter()
-                    .map(|&index| self.times_user[index])
-                    .collect();
-                self.times_system = keep_indices
-                    .iter()
-                    .map(|&index| self.times_system[index])
-                    .collect();
-                self.memory_usage_byte = keep_indices
-                    .iter()
-                    .map(|&index| self.memory_usage_byte[index])
-                    .collect();
-                if self.energy_measurements.len() == original_run_count {
-                    self.energy_measurements = keep_indices
-                        .iter()
-                        .map(|&index| self.energy_measurements[index])
+                self.retain_runs(&keep_indices);
+            }
+        }
+
+        // Original run numbers of the runs that are still present.
+        let run_numbers: Vec<usize> = (0..original_run_count)
+            .filter(|index| !omitted_failed_runs.iter().any(|o| o.index == *index))
+            .collect();
+
+        let mut discarded_outliers = Vec::new();
+        let mut too_many_outliers = false;
+        if let Some(threshold) = self.options.discard_outliers {
+            match outlier_indices(&self.times_real, threshold, MAX_DISCARD_FRACTION) {
+                Some(drop) if !drop.is_empty() => {
+                    let keep: Vec<usize> = (0..self.times_real.len())
+                        .filter(|index| !drop.contains(index))
                         .collect();
+                    discarded_outliers = drop.iter().map(|&index| run_numbers[index]).collect();
+                    self.retain_runs(&keep);
                 }
-                self.exit_codes = keep_indices
-                    .iter()
-                    .map(|&index| self.exit_codes[index])
-                    .collect();
+                Some(_) => {}
+                None => too_many_outliers = true,
             }
         }
 
@@ -371,10 +385,21 @@ impl<'a> BenchmarkRunner<'a> {
         let min_str = format_duration(t_min, Some(time_unit));
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
-        let num_str = if num_omitted_failed_runs > 0 {
-            format!("{t_num} runs ({num_omitted_failed_runs} failed runs omitted)")
-        } else {
+        let mut excluded = Vec::new();
+        if num_omitted_failed_runs > 0 {
+            excluded.push(format!("{num_omitted_failed_runs} failed runs omitted"));
+        }
+        if !discarded_outliers.is_empty() {
+            let n = discarded_outliers.len();
+            excluded.push(format!(
+                "{n} {} discarded",
+                if n == 1 { "outlier" } else { "outliers" }
+            ));
+        }
+        let num_str = if excluded.is_empty() {
             format!("{t_num} runs")
+        } else {
+            format!("{t_num} runs ({})", excluded.join(", "))
         };
 
         let user_str = format_duration(user_mean, Some(time_unit));
@@ -410,7 +435,7 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if self.times_real.len() == 1 {
-                let suffix = if num_omitted_failed_runs > 0 {
+                let suffix = if !excluded.is_empty() {
                     format!("    {}", num_str.dimmed())
                 } else {
                     String::new()
@@ -536,6 +561,11 @@ impl<'a> BenchmarkRunner<'a> {
             warnings.push(Warnings::NonZeroExitCode);
         }
 
+        if too_many_outliers {
+            warnings.push(Warnings::TooManyOutliers {
+                total: self.times_real.len(),
+            });
+        }
         if num_omitted_failed_runs > 0 {
             warnings.push(Warnings::FailedRunsOmitted {
                 omitted: num_omitted_failed_runs,
@@ -625,6 +655,7 @@ impl<'a> BenchmarkRunner<'a> {
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
             omitted_failed_runs,
+            discarded_outliers,
         })
     }
 }

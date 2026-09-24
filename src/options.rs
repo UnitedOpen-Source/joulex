@@ -274,6 +274,9 @@ pub struct Options {
     /// Whether to exclude failed runs from summary statistics
     pub omit_failed_runs: bool,
 
+    /// Modified Z-score above which runs are discarded (--discard-outliers)
+    pub discard_outliers: Option<f64>,
+
     /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
     pub allow_setup_with_round_robin: bool,
 }
@@ -304,6 +307,7 @@ impl Default for Options {
             suppress_outlier_warnings: false,
             schedule: ScheduleMode::Grouped,
             omit_failed_runs: false,
+            discard_outliers: None,
             allow_setup_with_round_robin: false,
         }
     }
@@ -511,6 +515,17 @@ impl Options {
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
         options.omit_failed_runs = matches.get_flag("omit-failed-runs");
+        options.discard_outliers = matches
+            .get_one::<String>("discard-outliers")
+            .map(|value| match value.as_str() {
+                "default" => Ok(crate::outlier_detection::OUTLIER_THRESHOLD),
+                other => other
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|z| z.is_finite() && *z > 0.0)
+                    .ok_or(OptionsError::InvalidOutlierThreshold(other.to_string())),
+            })
+            .transpose()?;
 
         if options.omit_failed_runs
             && options.command_failure_action == CmdFailureAction::RaiseError
