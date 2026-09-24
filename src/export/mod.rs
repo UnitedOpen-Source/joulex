@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
-use std::fs::{File, OpenOptions};
+use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod asciidoc;
 mod csv;
@@ -124,7 +124,10 @@ impl ExportManager {
             target: if filename == "-" {
                 ExportTarget::Stdout
             } else {
-                let _ = File::create(filename)
+                // Fail early (before any benchmark runs) if the file can never be
+                // written, but do not create or truncate it yet: an existing
+                // export is only replaced once new results are available.
+                check_export_target(filename)
                     .with_context(|| format!("Could not create export file '{filename}'"))?;
                 ExportTarget::File(filename.to_string())
             },
@@ -162,13 +165,59 @@ impl ExportManager {
     }
 }
 
-/// Write the given content to a file with the specified name
+/// Check that `filename` can later be written by `write_to_file`: its parent
+/// directory must exist and it must not be a directory itself.
+fn check_export_target(filename: &str) -> std::io::Result<()> {
+    let path = Path::new(filename);
+    if path.is_dir() {
+        return Err(std::io::Error::other("is a directory"));
+    }
+    let dir = parent_dir(path);
+    if !dir.is_dir() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No such file or directory",
+        ));
+    }
+    Ok(())
+}
+
+fn parent_dir(path: &Path) -> PathBuf {
+    match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    }
+}
+
+/// Atomically replace `filename` with `content`: write to a temporary file in
+/// the same directory, then rename it over the target. Readers never observe a
+/// truncated or partially written export, an existing file is left untouched
+/// if writing fails, and a symlink at `filename` is replaced instead of its
+/// target being overwritten.
 fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .open(filename)?;
-    file.write_all(content)
+    let path = Path::new(filename);
+    let file_name = path
+        .file_name()
+        .with_context(|| format!("Invalid export file name '{filename}'"))?;
+    let mut tmp_name = OsStr::new(".").to_os_string();
+    tmp_name.push(file_name);
+    tmp_name.push(format!(".joulex-tmp-{}", std::process::id()));
+    let tmp_path = parent_dir(path).join(tmp_name);
+
+    let write_tmp = || -> std::io::Result<()> {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)?;
+        file.write_all(content)?;
+        file.sync_all()?;
+        fs::rename(&tmp_path, path)
+    };
+
+    write_tmp()
+        .inspect_err(|_| {
+            let _ = fs::remove_file(&tmp_path);
+        })
         .with_context(|| format!("Failed to export results to '{filename}'"))
 }
 
