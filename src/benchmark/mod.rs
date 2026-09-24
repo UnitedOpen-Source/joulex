@@ -654,7 +654,11 @@ impl<'a> Benchmark<'a> {
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
                 Some(get_progress_bar(
                     self.options.warmup_count,
-                    "Performing warmup runs",
+                    if self.options.warmup_count == 1 {
+                        "Performing warmup run"
+                    } else {
+                        "Performing warmup runs"
+                    },
                     self.options.output_style,
                 ))
             } else {
