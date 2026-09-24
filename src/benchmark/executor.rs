@@ -26,8 +26,8 @@ impl BenchmarkIteration {
     pub fn to_env_var_value(&self) -> Option<String> {
         match self {
             BenchmarkIteration::NonBenchmarkRun => None,
-            BenchmarkIteration::Warmup(i) => Some(format!("warmup-{}", i)),
-            BenchmarkIteration::Benchmark(i) => Some(format!("{}", i)),
+            BenchmarkIteration::Warmup(i) => Some(format!("warmup-{i}")),
+            BenchmarkIteration::Benchmark(i) => Some(format!("{i}")),
         }
     }
 }
@@ -267,8 +267,7 @@ impl Executor for ShellExecutor<'_> {
                     };
 
                     bail!(
-                        "Could not measure shell execution time. Make sure you can run '{}'.",
-                        shell_cmd
+                        "Could not measure shell execution time. Make sure you can run '{shell_cmd}'."
                     );
                 }
                 Ok((r, _)) => {
