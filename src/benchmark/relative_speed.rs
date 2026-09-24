@@ -133,6 +133,8 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         min: mean,
         max: mean,
         times: None,
+        user_times: None,
+        system_times: None,
         memory_usage_byte: None,
         mean_energy_joules: None,
         mean_watts: None,

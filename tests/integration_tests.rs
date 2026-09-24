@@ -918,5 +918,26 @@ fn fails_with_missing_import_json_file() {
         .stderr(predicate::str::contains("Could not open import file 'non_existent_import_file.json'"));
 }
 
+#[test]
+fn exports_detailed_user_and_system_times_in_json() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("echo test_times")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    assert!(contents.contains("\"user_times\": ["));
+    assert!(contents.contains("\"system_times\": ["));
+}
+
+
 
 
