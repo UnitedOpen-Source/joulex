@@ -700,3 +700,46 @@ fn before_and_after_bench_aliases_work() {
         .expect_output("after_step")
         .run();
 }
+
+#[test]
+fn multiple_parameter_scans_execution_order() {
+    ExecutionOrderTest::new()
+        .arg("--runs=2")
+        .arg("--parameter-scan")
+        .arg("number")
+        .arg("1")
+        .arg("2")
+        .arg("--parameter-scan")
+        .arg("letter")
+        .arg("10")
+        .arg("11")
+        .command("command {number} {letter}")
+        .expect_output("command 1 10")
+        .expect_output("command 1 10")
+        .expect_output("command 2 10")
+        .expect_output("command 2 10")
+        .expect_output("command 1 11")
+        .expect_output("command 1 11")
+        .expect_output("command 2 11")
+        .expect_output("command 2 11")
+        .run();
+}
+
+#[test]
+fn combined_parameter_scan_and_list_execution_order() {
+    ExecutionOrderTest::new()
+        .arg("--runs=1")
+        .arg("--parameter-scan")
+        .arg("number")
+        .arg("1")
+        .arg("2")
+        .arg("--parameter-list")
+        .arg("letter")
+        .arg("x,y")
+        .command("command {number} {letter}")
+        .expect_output("command 1 x")
+        .expect_output("command 2 x")
+        .expect_output("command 1 y")
+        .expect_output("command 2 y")
+        .run();
+}

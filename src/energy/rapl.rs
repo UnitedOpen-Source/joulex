@@ -26,7 +26,7 @@ impl LinuxRaplSampler {
         for entry in entries.flatten() {
             let path = entry.path();
             let file_name = path.file_name()?.to_string_lossy();
-            if file_name.starts_with("intel-rapl:") && !file_name.contains(':') == false {
+            if file_name.starts_with("intel-rapl:") && file_name.matches(':').count() == 1 {
                 let energy_uj_path = path.join("energy_uj");
                 let max_range_path = path.join("max_energy_range_uj");
 
