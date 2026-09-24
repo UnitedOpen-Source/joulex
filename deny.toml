@@ -6,13 +6,10 @@ all-features = true
 
 [advisories]
 # Fail on vulnerabilities, unsound crates, yanked crates and unmaintained
-# crates, except for the unmaintained ones below, which are tracked in issues.
+# crates. Add exceptions with a reason and a tracking issue.
 unmaintained = "all"
 yanked = "deny"
-ignore = [
-    { id = "RUSTSEC-2024-0384", reason = "instant: unmaintained, pulled in by indicatif =0.17.4; tracked in #30" },
-    { id = "RUSTSEC-2025-0119", reason = "number_prefix: unmaintained, pulled in by indicatif =0.17.4; tracked in #30" },
-]
+ignore = []
 
 [licenses]
 # joulex is MIT OR Apache-2.0; every dependency license must be compatible.
