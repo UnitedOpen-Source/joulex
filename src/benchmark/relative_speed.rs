@@ -88,6 +88,10 @@ pub fn compute_with_check_from_reference<'a>(
     reference: &'a BenchmarkResult,
     sort_order: SortOrder,
 ) -> Option<Vec<BenchmarkResultWithRelativeSpeed<'a>>> {
+    if results.is_empty() {
+        return Some(Vec::new());
+    }
+
     if fastest_of(results).mean == 0.0 || reference.mean == 0.0 {
         return None;
     }
@@ -95,10 +99,14 @@ pub fn compute_with_check_from_reference<'a>(
     Some(compute_relative_speeds(results, reference, sort_order))
 }
 
-pub fn compute_with_check(
-    results: &[BenchmarkResult],
+pub fn compute_with_check<'a>(
+    results: &'a [BenchmarkResult],
     sort_order: SortOrder,
-) -> Option<Vec<BenchmarkResultWithRelativeSpeed<'_>>> {
+) -> Option<Vec<BenchmarkResultWithRelativeSpeed<'a>>> {
+    if results.is_empty() {
+        return Some(Vec::new());
+    }
+
     let fastest = fastest_of(results);
 
     if fastest.mean == 0.0 {
@@ -108,11 +116,52 @@ pub fn compute_with_check(
     Some(compute_relative_speeds(results, fastest, sort_order))
 }
 
-/// Same as compute_with_check, potentially resulting in relative speeds of infinity
-pub fn compute(
-    results: &[BenchmarkResult],
+/// Fallback when relative speed cannot be computed (e.g. fastest is 0.0).
+/// Populates entries with relative_speed = NaN and relative_speed_stddev = None.
+pub fn compute_without_ratios<'a>(
+    results: &'a [BenchmarkResult],
     sort_order: SortOrder,
-) -> Vec<BenchmarkResultWithRelativeSpeed<'_>> {
+) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+
+    let fastest = fastest_of(results);
+    let mut results: Vec<_> = results
+        .iter()
+        .map(|result| {
+            let is_reference = result == fastest;
+            let relative_ordering = compare_mean_time(result, fastest);
+
+            BenchmarkResultWithRelativeSpeed {
+                result,
+                relative_speed: f64::NAN,
+                relative_speed_stddev: None,
+                is_reference,
+                relative_ordering,
+            }
+        })
+        .collect();
+
+    match sort_order {
+        SortOrder::Command => {}
+        SortOrder::MeanTime => {
+            results.sort_unstable_by(|r1, r2| compare_mean_time(r1.result, r2.result));
+        }
+    }
+
+    results
+}
+
+/// Same as compute_with_check, potentially resulting in relative speeds of infinity
+pub fn compute<'a>(
+    results: &'a [BenchmarkResult],
+    sort_order: SortOrder,
+) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+
     let fastest = fastest_of(results);
 
     compute_relative_speeds(results, fastest, sort_order)
@@ -183,4 +232,26 @@ fn test_compute_relative_speed_for_zero_times() {
     let annotated_results = compute_with_check(&results, SortOrder::Command);
 
     assert!(annotated_results.is_none());
+}
+
+#[test]
+fn test_compute_without_ratios() {
+    let results = vec![create_result("cmd1", 0.0), create_result("cmd2", 0.0)];
+
+    let annotated_results = compute_without_ratios(&results, SortOrder::Command);
+    assert_eq!(annotated_results.len(), 2);
+    assert!(annotated_results[0].relative_speed.is_nan());
+    assert!(annotated_results[1].relative_speed.is_nan());
+    assert!(annotated_results[0].relative_speed_stddev.is_none());
+    assert!(annotated_results[1].relative_speed_stddev.is_none());
+}
+
+#[test]
+fn test_compute_empty_results() {
+    let results: Vec<BenchmarkResult> = Vec::new();
+    assert!(compute_with_check(&results, SortOrder::Command)
+        .unwrap()
+        .is_empty());
+    assert!(compute_without_ratios(&results, SortOrder::Command).is_empty());
+    assert!(compute(&results, SortOrder::Command).is_empty());
 }

@@ -365,3 +365,66 @@ fn test_markup_export_manual_s() {
     |===
     "#);
 }
+
+#[test]
+fn test_markup_export_zero_mean_displays_na() {
+    let results = [
+        BenchmarkResult {
+            command: String::from("a"),
+            command_with_unused_parameters: String::from("a"),
+            mean: 0.0,
+            stddev: Some(0.0),
+            median: 0.0,
+            user: 0.0,
+            system: 0.0,
+            cpu_percent: None,
+            min: 0.0,
+            max: 0.0,
+            times: Some(vec![0.0, 0.0, 0.0]),
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0), Some(0), Some(0)],
+            parameters: BTreeMap::new(),
+        },
+        BenchmarkResult {
+            command: String::from("b"),
+            command_with_unused_parameters: String::from("b"),
+            mean: 0.0,
+            stddev: Some(0.0),
+            median: 0.0,
+            user: 0.0,
+            system: 0.0,
+            cpu_percent: None,
+            min: 0.0,
+            max: 0.0,
+            times: Some(vec![0.0, 0.0, 0.0]),
+            user_times: None,
+            system_times: None,
+            memory_usage_byte: None,
+            mean_energy_joules: None,
+            mean_watts: None,
+            energy_joules: None,
+            exit_codes: vec![Some(0), Some(0), Some(0)],
+            parameters: BTreeMap::new(),
+        },
+    ];
+
+    let md = get_output::<MarkdownExporter>(&results, None, SortOrder::Command);
+    assert!(!md.contains("inf"));
+    assert!(!md.contains("NaN"));
+    assert!(md.contains("n/a"));
+
+    let adoc = get_output::<AsciidocExporter>(&results, None, SortOrder::Command);
+    assert!(!adoc.contains("inf"));
+    assert!(!adoc.contains("NaN"));
+    assert!(adoc.contains("n/a"));
+
+    let org = get_output::<OrgmodeExporter>(&results, None, SortOrder::Command);
+    assert!(!org.contains("inf"));
+    assert!(!org.contains("NaN"));
+    assert!(org.contains("n/a"));
+}

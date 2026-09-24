@@ -55,11 +55,19 @@ pub trait MarkupExporter {
             };
             let min_str = format_duration_value(measurement.min, Some(unit)).0;
             let max_str = format_duration_value(measurement.max, Some(unit)).0;
-            let rel_str = format!("{:.2}", entry.relative_speed);
+            let rel_str = if entry.relative_speed.is_finite() {
+                format!("{:.2}", entry.relative_speed)
+            } else {
+                "n/a".into()
+            };
             let rel_stddev_str = if entry.is_reference {
                 "".into()
             } else if let Some(stddev) = entry.relative_speed_stddev {
-                format!(" ± {stddev:.2}")
+                if stddev.is_finite() {
+                    format!(" ± {stddev:.2}")
+                } else {
+                    "".into()
+                }
             } else {
                 "".into()
             };
@@ -113,7 +121,8 @@ impl<T: MarkupExporter> Exporter for T {
         sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
         let unit = unit.unwrap_or_else(|| determine_unit_from_results(results));
-        let entries = relative_speed::compute(results, sort_order);
+        let entries = relative_speed::compute_with_check(results, sort_order)
+            .unwrap_or_else(|| relative_speed::compute_without_ratios(results, sort_order));
 
         let table = self.table_results(&entries, unit);
         Ok(table.as_bytes().to_vec())
