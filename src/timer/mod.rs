@@ -31,6 +31,8 @@ pub struct TimerResult {
     pub time_user: Second,
     pub time_system: Second,
     pub memory_usage_byte: u64,
+    /// OS resource counters (Unix only)
+    pub counters: Option<crate::benchmark::timing_result::ResourceCounters>,
     /// The exit status of the process
     pub status: ExitStatus,
 }
@@ -99,16 +101,24 @@ pub fn execute_and_measure(mut command: Command) -> Result<TimerResult> {
 
     let time_real = wallclock_timer.stop();
     #[cfg(not(windows))]
-    let (time_user, time_system, memory_usage_byte) =
-        (usage.user, usage.system, usage.max_rss_byte);
+    let (time_user, time_system, memory_usage_byte, counters) = (
+        usage.user,
+        usage.system,
+        usage.max_rss_byte,
+        Some(usage.counters),
+    );
     #[cfg(windows)]
-    let (time_user, time_system, memory_usage_byte) = cpu_timer.stop();
+    let (time_user, time_system, memory_usage_byte, counters) = {
+        let (user, system, memory) = cpu_timer.stop();
+        (user, system, memory, None)
+    };
 
     Ok(TimerResult {
         time_real,
         time_user,
         time_system,
         memory_usage_byte,
+        counters,
         status,
     })
 }
