@@ -18,6 +18,7 @@ pub enum Warnings {
     OffCpuTime(Second, Second, f64),
     FailedRunsOmitted { omitted: usize, total: usize },
     TooManyOutliers { total: usize },
+    WarmupNotStable { runs: u64, spread: f64 },
 }
 
 impl fmt::Display for Warnings {
@@ -83,6 +84,13 @@ impl fmt::Display for Warnings {
                     ratio_str = ratio_str,
                 )
             }
+            Warnings::WarmupNotStable { runs, spread } => write!(
+                f,
+                "'--warmup auto' stopped after {runs} runs without the timings becoming stable \
+                 (the last runs still differ by {:.1}%). The benchmark may include warmup \
+                 effects; consider a fixed '--warmup NUM' or a quieter system.",
+                spread * 100.0
+            ),
             Warnings::TooManyOutliers { total } => write!(
                 f,
                 "Too many of the {total} runs (more than {:.0}%) look like outliers, so none were discarded \

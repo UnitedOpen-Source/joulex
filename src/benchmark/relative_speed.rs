@@ -196,6 +196,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         resources: None,
         percentiles: None,
         geometric_mean: None,
+        warmup_runs: None,
     }
 }
 

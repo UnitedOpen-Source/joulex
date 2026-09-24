@@ -31,6 +31,10 @@ pub struct BenchmarkResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percentiles: Option<Percentiles>,
 
+    /// Number of warmup runs performed by `--warmup auto`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warmup_runs: Option<u64>,
+
     /// Geometric mean of the run times (omitted if a run took 0 s)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometric_mean: Option<Second>,

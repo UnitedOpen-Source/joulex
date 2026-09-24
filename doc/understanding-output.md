@@ -82,7 +82,7 @@ Summary
 | Option | Runs | Timed? |
 |---|---|---|
 | `-s`, `--setup CMD` | once **before all runs** of a benchmark (after the parameters are substituted); give it once for all commands or once per command | no |
-| `-w`, `--warmup N` | N untimed runs of the command | no |
+| `-w`, `--warmup N` | N untimed runs of the command; with `--warmup auto`, runs until the last 5 differ by at most 1% (at most 100; the count is printed and exported as `warmup_runs`) | no |
 | `-p`, `--prepare CMD` (alias `--before`) | before **each** run (warmup and timed) | no |
 | the command | each timed run | **yes** |
 | `-C`, `--conclude CMD` (alias `--after`) | after **each** run | no |
