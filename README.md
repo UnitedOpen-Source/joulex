@@ -1,5 +1,5 @@
 # joulex
-[![CICD](https://github.com/unitedopensource/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/unitedopensource/joulex/actions/workflows/CICD.yml)
+[![CICD](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml)
 [![Version info](https://img.shields.io/crates/v/joulex.svg)](https://crates.io/crates/joulex)
 
 A multi-dimensional command-line benchmarking tool with **Performance per Watt (Energy)** and **Deep Statistics (Criterion-rs)**.
@@ -300,16 +300,16 @@ conda install -c conda-forge hyperfine
 
 ### With cargo (Linux, macOS, Windows)
 
-Hyperfine can be installed from source via [cargo](https://doc.rust-lang.org/cargo/):
+Joulex can be installed from source via [cargo](https://doc.rust-lang.org/cargo/):
 ```
-cargo install --locked hyperfine
+cargo install --locked joulex
 ```
 
-Make sure that you use Rust 1.76 or newer.
+Make sure that you use Rust 1.88 or newer.
 
 ### From binaries (Linux, macOS, Windows)
 
-Download the corresponding archive from the [Release page](https://github.com/sharkdp/hyperfine/releases).
+Download the corresponding archive from the [Release page](https://github.com/UnitedOpen-Source/joulex/releases).
 
 ## Alternative tools
 

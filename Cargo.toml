@@ -5,11 +5,11 @@ authors = [
 ]
 categories = ["command-line-utilities"]
 description = "Multi-dimensional command-line benchmarking tool with energy and deep stats"
-homepage = "https://github.com/unitedopensource/joulex"
+homepage = "https://github.com/UnitedOpen-Source/joulex"
 license = "MIT OR Apache-2.0"
 name = "joulex"
 readme = "README.md"
-repository = "https://github.com/unitedopensource/joulex"
+repository = "https://github.com/UnitedOpen-Source/joulex"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
