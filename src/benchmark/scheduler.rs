@@ -31,24 +31,44 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    pub fn run_benchmarks(&mut self) -> Result<()> {
-        let mut executor: Box<dyn Executor> = match self.options.executor_kind {
-            ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
-            ExecutorKind::Mock(ref shell) => Box::new(MockExecutor::new(shell.clone())),
-            ExecutorKind::Shell(ref shell) => Box::new(ShellExecutor::new(shell, self.options)),
-        };
+    pub fn add_imported_results(&mut self, imported: Vec<BenchmarkResult>) {
+        for res in imported {
+            if self.options.output_style != OutputStyleOption::Disabled {
+                println!(
+                    "{}{}: {} (imported)",
+                    "Benchmark ".bold(),
+                    (self.results.len() + 1).to_string().bold(),
+                    res.command_with_unused_parameters.cyan()
+                );
+            }
+            self.results.push(res);
+        }
+    }
 
+    pub fn run_benchmarks(&mut self) -> Result<()> {
         let reference = self
             .options
             .reference_command
             .as_ref()
             .map(|cmd| Command::new(self.options.reference_name.as_deref(), cmd));
 
+        let total_live_commands = reference.iter().count() + self.commands.iter().count();
+        if total_live_commands == 0 {
+            return Ok(());
+        }
+
+        let mut executor: Box<dyn Executor> = match self.options.executor_kind {
+            ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
+            ExecutorKind::Mock(ref shell) => Box::new(MockExecutor::new(shell.clone())),
+            ExecutorKind::Shell(ref shell) => Box::new(ShellExecutor::new(shell, self.options)),
+        };
+
         executor.calibrate()?;
 
+        let display_offset = self.results.len();
         for (number, cmd) in reference.iter().chain(self.commands.iter()).enumerate() {
             self.results
-                .push(Benchmark::new(number, cmd, self.options, &*executor).run()?);
+                .push(Benchmark::new(number, number + display_offset, cmd, self.options, &*executor).run()?);
 
             // We export results after each individual benchmark, because
             // we would risk losing them if a later benchmark fails.

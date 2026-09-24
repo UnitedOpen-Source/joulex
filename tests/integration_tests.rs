@@ -851,4 +851,72 @@ fn fails_with_missing_parameter_file() {
         .stderr(predicate::str::contains("Could not read parameter file"));
 }
 
+#[test]
+fn can_import_json_and_compare_with_live_command() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("baseline.json");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--shell=none")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sleep 0.01")
+        .assert()
+        .success();
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--shell=none")
+        .arg("--import-json")
+        .arg(&export_path)
+        .arg("sleep 0.02")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Benchmark 1: sleep 0.01 (imported)"))
+        .stdout(predicate::str::contains("Benchmark 2: sleep 0.02"))
+        .stdout(predicate::str::contains("Summary"));
+}
+
+#[test]
+fn can_convert_imported_json_without_live_command() {
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_json_path = tempdir.path().join("baseline.json");
+    let export_md_path = tempdir.path().join("converted.md");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--export-json")
+        .arg(&export_json_path)
+        .arg("echo baseline_test")
+        .assert()
+        .success();
+
+    hyperfine()
+        .arg("--import-json")
+        .arg(&export_json_path)
+        .arg("--export-markdown")
+        .arg(&export_md_path)
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_md_path).unwrap();
+    assert!(contents.contains("echo baseline_test"));
+}
+
+#[test]
+fn fails_with_missing_import_json_file() {
+    hyperfine()
+        .arg("--import-json")
+        .arg("non_existent_import_file.json")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Could not open import file 'non_existent_import_file.json'"));
+}
+
+
 

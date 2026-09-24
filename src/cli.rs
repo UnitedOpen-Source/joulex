@@ -32,10 +32,20 @@ pub fn build_command() -> Command {
                        The latter is only available if the shell is not explicitly disabled via \
                        '--shell=none'. If multiple commands are given, hyperfine will show a \
                        comparison of the respective runtimes.")
-                .required_unless_present("generate-completions")
+                .required_unless_present_any(["generate-completions", "import-json"])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("import-json")
+                .long("import-json")
+                .action(ArgAction::Append)
+                .value_name("FILE")
+                .help("Import timing results from a JSON file previously exported by joulex/hyperfine. \
+                       Multiple files can be specified. Can be combined with commands to benchmark or used \
+                       on its own to re-export existing results to another format.\n\n\
+                       Example:  joulex --import-json baseline.json 'sleep 1'\n"),
         )
         .arg(
             Arg::new("warmup")
