@@ -23,9 +23,9 @@ use crate::util::units::{format_bytes, Second};
 use benchmark_result::{BenchmarkResult, OmittedRun};
 use timing_result::TimingResult;
 
+use crate::stats::basic::{mean, median, standard_deviation};
 use anyhow::{anyhow, bail, Result};
 use colored::*;
-use statistical::{mean, median, standard_deviation};
 
 use self::executor::Executor;
 
