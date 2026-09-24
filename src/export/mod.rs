@@ -184,6 +184,6 @@ fn get_export_type_from_filename(filename: &str) -> ExportType {
         Some("csv") => ExportType::Csv,
         Some("md" | "markdown") => ExportType::Markdown,
         Some("org") => ExportType::Orgmode,
-        Some("json") | _ => ExportType::Json,
+        _ => ExportType::Json,
     }
 }

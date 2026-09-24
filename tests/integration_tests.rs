@@ -891,7 +891,9 @@ fn can_import_json_and_compare_with_live_command() {
         .arg("sleep 0.02")
         .assert()
         .success()
-        .stdout(predicate::str::contains("Benchmark 1: sleep 0.01 (imported)"))
+        .stdout(predicate::str::contains(
+            "Benchmark 1: sleep 0.01 (imported)",
+        ))
         .stdout(predicate::str::contains("Benchmark 2: sleep 0.02"))
         .stdout(predicate::str::contains("Summary"));
 }
@@ -931,7 +933,9 @@ fn fails_with_missing_import_json_file() {
         .arg("non_existent_import_file.json")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Could not open import file 'non_existent_import_file.json'"));
+        .stderr(predicate::str::contains(
+            "Could not open import file 'non_existent_import_file.json'",
+        ));
 }
 
 #[test]
@@ -991,6 +995,48 @@ fn export_csv_with_reference_and_parameter_scan() {
     assert!(contents.contains("sleep 0.01"));
 }
 
+#[test]
+fn off_cpu_warning_and_cpu_percent_display() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains(
+            "Substantial off-CPU time detected",
+        ));
+}
 
+#[test]
+fn off_cpu_warning_suppressed_by_flag() {
+    hyperfine()
+        .arg("--runs=2")
+        .arg("--shell=none")
+        .arg("--suppress-outlier-warnings")
+        .arg("sleep 0.12")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("CPU:"))
+        .stderr(predicate::str::contains("Substantial off-CPU time detected").not());
+}
 
+#[test]
+fn json_export_includes_cpu_percent() {
+    use tempfile::tempdir;
 
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("results.json");
+
+    hyperfine()
+        .arg("--runs=1")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("echo test_cpu_json")
+        .assert()
+        .success();
+
+    let contents = std::fs::read_to_string(export_path).unwrap();
+    assert!(contents.contains("\"cpu_percent\":"));
+}

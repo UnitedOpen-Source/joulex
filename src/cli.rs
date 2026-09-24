@@ -119,6 +119,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("prepare")
                 .long("prepare")
+                .visible_alias("before")
                 .short('p')
                 .action(ArgAction::Append)
                 .num_args(1)
@@ -135,6 +136,7 @@ pub fn build_command() -> Command {
         .arg(
             Arg::new("conclude")
                 .long("conclude")
+                .visible_alias("after")
                 .short('C')
                 .action(ArgAction::Append)
                 .num_args(1)

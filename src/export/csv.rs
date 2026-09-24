@@ -78,7 +78,11 @@ impl Exporter for CsvExporter {
                 fields.push(Cow::Owned(f.to_string().into_bytes()))
             }
             for param_name in &all_param_names {
-                let val = res.parameters.get(*param_name).map(|s| s.as_str()).unwrap_or("");
+                let val = res
+                    .parameters
+                    .get(*param_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 fields.push(sanitize_csv_value(val));
             }
             writer.write_record(fields)?;
@@ -102,6 +106,7 @@ fn test_csv() {
             median: 1.0,
             user: 3.0,
             system: 4.0,
+            cpu_percent: None,
             min: 5.0,
             max: 6.0,
             times: Some(vec![7.0, 8.0, 9.0]),
@@ -127,6 +132,7 @@ fn test_csv() {
             median: 11.0,
             user: 13.0,
             system: 14.0,
+            cpu_percent: None,
             min: 15.0,
             max: 16.5,
             times: Some(vec![17.0, 18.0, 19.0]),
@@ -173,6 +179,7 @@ fn test_csv_formula_injection_sanitization() {
         median: 0.1,
         user: 0.0,
         system: 0.0,
+        cpu_percent: None,
         min: 0.1,
         max: 0.1,
         times: None,
@@ -253,6 +260,7 @@ fn test_csv_with_reference_command() {
             median: 1.0,
             user: 0.5,
             system: 0.5,
+            cpu_percent: None,
             min: 1.0,
             max: 1.0,
             times: None,
@@ -273,6 +281,7 @@ fn test_csv_with_reference_command() {
             median: 2.0,
             user: 1.0,
             system: 1.0,
+            cpu_percent: None,
             min: 2.0,
             max: 2.0,
             times: None,
@@ -319,6 +328,7 @@ fn test_csv_heterogeneous_parameters() {
             median: 1.0,
             user: 0.5,
             system: 0.5,
+            cpu_percent: None,
             min: 1.0,
             max: 1.0,
             times: None,
@@ -343,6 +353,7 @@ fn test_csv_heterogeneous_parameters() {
             median: 2.0,
             user: 1.0,
             system: 1.0,
+            cpu_percent: None,
             min: 2.0,
             max: 2.0,
             times: None,

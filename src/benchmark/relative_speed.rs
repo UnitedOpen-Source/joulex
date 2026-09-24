@@ -130,6 +130,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         median: mean,
         user: mean,
         system: 0.0,
+        cpu_percent: None,
         min: mean,
         max: mean,
         times: None,

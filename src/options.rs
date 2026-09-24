@@ -635,11 +635,8 @@ fn test_schedule_options() {
     let options_seq = Options::from_cli_arguments(&matches_seq).unwrap();
     assert_eq!(options_seq.schedule, ScheduleMode::RoundRobin);
 
-    let matches_flag = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
-        "--round-robin",
-        "echo test",
-    ]);
+    let matches_flag =
+        crate::cli::build_command().get_matches_from(vec!["joulex", "--round-robin", "echo test"]);
     let options_flag = Options::from_cli_arguments(&matches_flag).unwrap();
     assert_eq!(options_flag.schedule, ScheduleMode::RoundRobin);
 

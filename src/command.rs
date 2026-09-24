@@ -630,13 +630,7 @@ fn test_parameter_file_support() {
     writeln!(temp, "foo\r\nbar\n\nbaz\n").unwrap();
     let temp_path = temp.path().to_str().unwrap().to_string();
 
-    let matches = get_cli_arguments(vec![
-        "joulex",
-        "-F",
-        "item",
-        &temp_path,
-        "echo {item}",
-    ]);
+    let matches = get_cli_arguments(vec!["joulex", "-F", "item", &temp_path, "echo {item}"]);
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     assert_eq!(commands.iter().count(), 3);
     let names: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
@@ -666,4 +660,3 @@ fn test_parameter_file_and_list_combined() {
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     assert_eq!(commands.iter().count(), 4);
 }
-

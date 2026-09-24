@@ -32,6 +32,10 @@ pub struct BenchmarkResult {
     /// Time spent in kernel mode
     pub system: Second,
 
+    /// CPU utilization percentage: (user + system) / mean * 100.0
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cpu_percent: Option<f64>,
+
     /// Minimum of all measured times
     pub min: Second,
 
