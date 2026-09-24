@@ -369,6 +369,7 @@ impl<'a> BenchmarkRunner<'a> {
 
         let (mean_str, time_unit) = format_duration_unit(t_mean, self.options.time_unit);
         let min_str = format_duration(t_min, Some(time_unit));
+        let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let num_str = if num_omitted_failed_runs > 0 {
             format!("{t_num} runs ({num_omitted_failed_runs} failed runs omitted)")
@@ -441,10 +442,12 @@ impl<'a> BenchmarkRunner<'a> {
                 );
 
                 println!(
-                    "  Range ({} … {}):   {:>8} … {:>8}    {}",
+                    "  Range ({} … {} … {}):   {:>8} … {:>8} … {:>8}    {}",
                     "min".cyan(),
+                    "median".yellow(),
                     "max".purple(),
                     min_str.cyan(),
+                    median_str.yellow(),
                     max_str.purple(),
                     num_str.dimmed()
                 );
@@ -496,6 +499,23 @@ impl<'a> BenchmarkRunner<'a> {
                         format_duration(deep.median_ci_upper, Some(time_unit)),
                         format_duration(deep.std_dev_ci_lower, Some(time_unit)),
                         format_duration(deep.std_dev_ci_upper, Some(time_unit))
+                    );
+                }
+                if let Some([p05, p25, p75, p95]) =
+                    crate::stats::summary::quartiles_and_tails(&self.times_real)
+                {
+                    let fmt = |v| format_duration(v, Some(time_unit));
+                    let geomean_str = crate::stats::summary::geometric_mean(&self.times_real)
+                        .map(|g| format!(", geometric mean: {}", fmt(g)))
+                        .unwrap_or_default();
+                    println!(
+                        "  Percentiles:        [p05: {}, p25: {}, p75: {}, p95: {} (IQR {}){}]",
+                        fmt(p05),
+                        fmt(p25),
+                        fmt(p75),
+                        fmt(p95),
+                        fmt(p75 - p25),
+                        geomean_str
                     );
                 }
             }
