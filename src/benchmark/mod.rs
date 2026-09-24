@@ -134,17 +134,13 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn run_setup(&self) -> Result<TimingResult> {
-        let command = self
-            .options
-            .setup_command
-            .as_ref()
-            .map(|setup_command| {
-                Command::new_parametrized(
-                    None,
-                    setup_command,
-                    self.command.get_parameters().iter().cloned(),
-                )
-            });
+        let command = self.options.setup_command.as_ref().map(|setup_command| {
+            Command::new_parametrized(
+                None,
+                setup_command,
+                self.command.get_parameters().iter().cloned(),
+            )
+        });
 
         let error_output = "The setup command terminated with a non-zero exit code. \
                             Append ' || true' to the command if you are sure that this can be ignored.";
@@ -337,6 +333,18 @@ impl<'a> BenchmarkRunner<'a> {
             String::new()
         };
 
+        let total_cpu = user_mean + system_mean;
+        let cpu_percent = Some(if t_mean > 0.0 {
+            (total_cpu / t_mean) * 100.0
+        } else {
+            0.0
+        });
+        let cpu_str = if let Some(pct) = cpu_percent {
+            format!(", CPU: {:.0}%", pct)
+        } else {
+            String::new()
+        };
+
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
                 println!(
@@ -349,25 +357,27 @@ impl<'a> BenchmarkRunner<'a> {
 
             if self.times_real.len() == 1 {
                 println!(
-                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}]",
+                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]",
                     "abs".green().bold(),
                     mean_str.green().bold(),
                     "        ", // alignment
                     user_str.blue(),
                     system_str.blue(),
+                    cpu_str.blue(),
                     mem_str.blue()
                 );
             } else {
                 let stddev_str = format_duration(t_stddev.unwrap(), Some(time_unit));
 
                 println!(
-                    "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}]",
+                    "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",
                     "mean".green().bold(),
                     "σ".green(),
                     mean_str.green().bold(),
                     stddev_str.green(),
                     user_str.blue(),
                     system_str.blue(),
+                    cpu_str.blue(),
                     mem_str.blue()
                 );
 
@@ -385,11 +395,18 @@ impl<'a> BenchmarkRunner<'a> {
                 if !self.energy_measurements.is_empty() {
                     let mean_joules = mean(&self.energy_measurements);
                     let stddev_joules = if self.energy_measurements.len() > 1 {
-                        Some(standard_deviation(&self.energy_measurements, Some(mean_joules)))
+                        Some(standard_deviation(
+                            &self.energy_measurements,
+                            Some(mean_joules),
+                        ))
                     } else {
                         None
                     };
-                    let watts = if t_mean > 0.0 { mean_joules / t_mean } else { 0.0 };
+                    let watts = if t_mean > 0.0 {
+                        mean_joules / t_mean
+                    } else {
+                        0.0
+                    };
 
                     let energy_str = if let Some(sd) = stddev_joules {
                         format!("{:.3} ± {:.3} J", mean_joules, sd)
@@ -415,7 +432,10 @@ impl<'a> BenchmarkRunner<'a> {
                 if let Some(deep) = compute_deep_stats(&self.times_real) {
                     println!(
                         "  Bootstrap 95% CI:   [mean: {:.4}s … {:.4}s, median: {:.4}s … {:.4}s]",
-                        deep.mean_ci_lower, deep.mean_ci_upper, deep.median_ci_lower, deep.median_ci_upper
+                        deep.mean_ci_lower,
+                        deep.mean_ci_upper,
+                        deep.median_ci_lower,
+                        deep.median_ci_upper
                     );
                 }
             }
@@ -451,6 +471,16 @@ impl<'a> BenchmarkRunner<'a> {
         };
 
         if !self.options.suppress_outlier_warnings {
+            let total_cpu = user_mean + system_mean;
+            if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
+                let ratio = if total_cpu > 0.0 {
+                    t_mean / total_cpu
+                } else {
+                    f64::INFINITY
+                };
+                warnings.push(Warnings::OffCpuTime(t_mean, total_cpu, ratio));
+            }
+
             if scores[0] > OUTLIER_THRESHOLD {
                 warnings.push(Warnings::SlowInitialRun(
                     self.times_real[0],
@@ -489,6 +519,7 @@ impl<'a> BenchmarkRunner<'a> {
             median: t_median,
             user: user_mean,
             system: system_mean,
+            cpu_percent,
             min: t_min,
             max: t_max,
             times: Some(self.times_real),

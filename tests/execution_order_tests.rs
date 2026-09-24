@@ -54,6 +54,11 @@ impl ExecutionOrderTest {
         self.command(output)
     }
 
+    fn before(&mut self, output: &str) -> &mut Self {
+        self.arg("--before");
+        self.command(output)
+    }
+
     fn reference(&mut self, output: &str) -> &mut Self {
         self.arg("--reference");
         self.command(output)
@@ -61,6 +66,11 @@ impl ExecutionOrderTest {
 
     fn conclude(&mut self, output: &str) -> &mut Self {
         self.arg("--conclude");
+        self.command(output)
+    }
+
+    fn after(&mut self, output: &str) -> &mut Self {
+        self.arg("--after");
         self.command(output)
     }
 
@@ -645,5 +655,48 @@ fn reference_round_robin_execution() {
         .expect_output("command 1")
         .expect_output("reference")
         .expect_output("command 1")
+        .run();
+}
+
+#[test]
+fn prepare_and_conclude_see_the_current_joulex_and_hyperfine_iteration() {
+    #[cfg(unix)]
+    let var = "${JOULEX_ITERATION}";
+    #[cfg(windows)]
+    let var = "%JOULEX_ITERATION%";
+
+    ExecutionOrderTest::new()
+        .arg("--warmup=1")
+        .arg("--runs=2")
+        .prepare(&format!("prep={var}"))
+        .command(&format!("main={var}"))
+        .conclude(&format!("conc={var}"))
+        // warmup
+        .expect_output("prep=warmup-0")
+        .expect_output("main=warmup-0")
+        .expect_output("conc=warmup-0")
+        // benchmark
+        .expect_output("prep=0")
+        .expect_output("main=0")
+        .expect_output("conc=0")
+        .expect_output("prep=1")
+        .expect_output("main=1")
+        .expect_output("conc=1")
+        .run();
+}
+
+#[test]
+fn before_and_after_bench_aliases_work() {
+    ExecutionOrderTest::new()
+        .arg("--runs=2")
+        .before("before_step")
+        .command("main_step")
+        .after("after_step")
+        .expect_output("before_step")
+        .expect_output("main_step")
+        .expect_output("after_step")
+        .expect_output("before_step")
+        .expect_output("main_step")
+        .expect_output("after_step")
         .run();
 }

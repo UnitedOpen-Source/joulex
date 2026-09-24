@@ -143,7 +143,9 @@ impl<'a> Scheduler<'a> {
             let max_count = runners.iter().map(|r| r.count).max().unwrap_or(1);
             let total_remaining_runs: u64 = runners.iter().map(|r| r.count.saturating_sub(1)).sum();
 
-            let progress_bar = if self.options.output_style != OutputStyleOption::Disabled && total_remaining_runs > 0 {
+            let progress_bar = if self.options.output_style != OutputStyleOption::Disabled
+                && total_remaining_runs > 0
+            {
                 Some(get_progress_bar(
                     total_remaining_runs,
                     "Performing round-robin benchmark runs",
@@ -180,25 +182,43 @@ impl<'a> Scheduler<'a> {
                 self.results.push(res);
 
                 let intermediate_results: Vec<_> = if self.options.filter_failed {
-                    self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+                    self.results
+                        .iter()
+                        .filter(|r| !r.has_failure())
+                        .cloned()
+                        .collect()
                 } else {
                     self.results.clone()
                 };
-                self.export_manager.write_results(&intermediate_results, true)?;
+                self.export_manager
+                    .write_results(&intermediate_results, true)?;
             }
         } else {
             for (number, cmd) in commands_to_run {
-                self.results
-                    .push(Benchmark::new(number, number + display_offset, cmd, self.options, &*executor).run()?);
+                self.results.push(
+                    Benchmark::new(
+                        number,
+                        number + display_offset,
+                        cmd,
+                        self.options,
+                        &*executor,
+                    )
+                    .run()?,
+                );
 
                 // We export results after each individual benchmark, because
                 // we would risk losing them if a later benchmark fails.
                 let intermediate_results: Vec<_> = if self.options.filter_failed {
-                    self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+                    self.results
+                        .iter()
+                        .filter(|r| !r.has_failure())
+                        .cloned()
+                        .collect()
                 } else {
                     self.results.clone()
                 };
-                self.export_manager.write_results(&intermediate_results, true)?;
+                self.export_manager
+                    .write_results(&intermediate_results, true)?;
             }
         }
 
@@ -278,7 +298,7 @@ impl<'a> Scheduler<'a> {
                         println!(
                             "{} {}",
                             comparator,
-                            &item.result.command_with_unused_parameters.magenta()
+                            item.result.command_with_unused_parameters.magenta()
                         );
 
                         if self.options.deep_stats {
@@ -293,7 +313,8 @@ impl<'a> Scheduler<'a> {
                                     } else if cmp.is_significant_05 {
                                         "statistically significant (p < 0.05)".cyan()
                                     } else {
-                                        "no statistically significant difference (p ≥ 0.05)".dimmed()
+                                        "no statistically significant difference (p ≥ 0.05)"
+                                            .dimmed()
                                     };
                                     println!(
                                         "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
@@ -347,7 +368,7 @@ impl<'a> Scheduler<'a> {
                             format!("{:10.2}", item.relative_speed).bold().green(),
                             stddev_suffix,
                             reference_annotation,
-                            &item.result.command_with_unused_parameters,
+                            item.result.command_with_unused_parameters,
                         );
                     }
                 }
@@ -367,7 +388,11 @@ impl<'a> Scheduler<'a> {
 
     pub fn final_export(&self) -> Result<()> {
         let results: Vec<_> = if self.options.filter_failed {
-            self.results.iter().filter(|r| !r.has_failure()).cloned().collect()
+            self.results
+                .iter()
+                .filter(|r| !r.has_failure())
+                .cloned()
+                .collect()
         } else {
             self.results.clone()
         };
@@ -411,6 +436,7 @@ fn scheduler_basic() -> Result<()> {
       median: 0.123
       user: 0
       system: 0
+      cpu_percent: 0
       min: 0.123
       max: 0.123
       times:
@@ -434,6 +460,7 @@ fn scheduler_basic() -> Result<()> {
       median: 0.456
       user: 0
       system: 0
+      cpu_percent: 0
       min: 0.456
       max: 0.456
       times:
@@ -465,6 +492,7 @@ fn scheduler_round_robin() -> Result<()> {
       median: 0.123
       user: 0
       system: 0
+      cpu_percent: 0
       min: 0.123
       max: 0.123
       times:
@@ -488,6 +516,7 @@ fn scheduler_round_robin() -> Result<()> {
       median: 0.456
       user: 0
       system: 0
+      cpu_percent: 0
       min: 0.456
       max: 0.456
       times:

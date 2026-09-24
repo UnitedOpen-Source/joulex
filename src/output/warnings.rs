@@ -15,6 +15,7 @@ pub enum Warnings {
     NonZeroExitCode,
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
+    OffCpuTime(Second, Second, f64),
 }
 
 impl fmt::Display for Warnings {
@@ -64,6 +65,39 @@ impl fmt::Display for Warnings {
                     " It might help to use the '--warmup' or '--prepare' options."
                 }
             ),
+            Warnings::OffCpuTime(wall, cpu, ratio) => {
+                let ratio_str = if ratio.is_infinite() {
+                    "∞".to_string()
+                } else {
+                    format!("{ratio:.1}x")
+                };
+                write!(
+                    f,
+                    "Substantial off-CPU time detected: the process spent most of its wall-clock time \
+                     waiting (I/O, sleep, locks, or system scheduling) rather than executing on-CPU \
+                     (wall: {wall_str}, CPU: {cpu_str}, ratio: {ratio_str}).",
+                    wall_str = format_duration(wall, None),
+                    cpu_str = format_duration(cpu, None),
+                    ratio_str = ratio_str,
+                )
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_off_cpu_time_warning_format() {
+        let warning = Warnings::OffCpuTime(1.0, 0.002, 500.0);
+        let msg = format!("{warning}");
+        assert!(msg.contains("Substantial off-CPU time detected"));
+        assert!(msg.contains("500.0x"));
+
+        let warning_inf = Warnings::OffCpuTime(1.0, 0.0, f64::INFINITY);
+        let msg_inf = format!("{warning_inf}");
+        assert!(msg_inf.contains("∞"));
     }
 }

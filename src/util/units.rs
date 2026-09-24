@@ -73,5 +73,8 @@ fn test_format_bytes() {
     assert_eq!("512 B", format_bytes(512));
     assert_eq!("1.5 KB", format_bytes(1536));
     assert_eq!("20.0 MB", format_bytes(20 * 1024 * 1024));
-    assert_eq!("1.50 GB", format_bytes((1.5 * 1024.0 * 1024.0 * 1024.0) as u64));
+    assert_eq!(
+        "1.50 GB",
+        format_bytes((1.5 * 1024.0 * 1024.0 * 1024.0) as u64)
+    );
 }
