@@ -1,7 +1,10 @@
 use std::ffi::OsString;
 
 use clap::{
-    builder::{NonEmptyStringValueParser, PossibleValuesParser},
+    builder::{
+        styling::{AnsiColor, Effects},
+        NonEmptyStringValueParser, PossibleValuesParser, Styles,
+    },
     crate_version, Arg, ArgAction, ArgMatches, Command, ValueHint,
 };
 
@@ -16,10 +19,22 @@ where
     command.get_matches_from(args)
 }
 
+/// Colors used by `--help` and usage errors. clap disables them automatically
+/// when stdout is not a terminal or when `NO_COLOR` is set.
+const STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .valid(AnsiColor::Green.on_default())
+    .invalid(AnsiColor::Yellow.on_default());
+
 /// Build the clap command for parsing command line arguments
 pub fn build_command() -> Command {
     Command::new("joulex")
         .version(crate_version!())
+        .styles(STYLES)
         .next_line_help(true)
         .hide_possible_values(true)
         .about("A multi-dimensional command-line benchmarking tool with energy and deep stats.")
