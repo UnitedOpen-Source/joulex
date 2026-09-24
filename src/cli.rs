@@ -561,6 +561,16 @@ pub fn build_command() -> Command {
                 .help("Generate a shell completions script for the given shell and print it to stdout.")
         )
         .arg(
+            Arg::new("affinity")
+                .long("affinity")
+                .action(ArgAction::Set)
+                .value_name("CPUS")
+                .help("Pin every benchmarked command (and --prepare/--conclude/--setup/--cleanup) \
+                       to the given CPUs, e.g. '2', '0-3' or '0,2,4-5'. Reduces noise from \
+                       migrations between cores, especially on CPUs with performance and \
+                       efficiency cores. Linux and Windows only."),
+        )
+        .arg(
             Arg::new("resource-usage")
                 .long("resource-usage")
                 .visible_alias("rusage")

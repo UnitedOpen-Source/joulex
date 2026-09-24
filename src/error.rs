@@ -67,4 +67,7 @@ pub enum OptionsError<'a> {
 
     #[error("Invalid threshold '{0}' for '--discard-outliers': expected a positive number")]
     InvalidOutlierThreshold(String),
+
+    #[error("Invalid '--affinity': {0}")]
+    InvalidAffinity(String),
 }
