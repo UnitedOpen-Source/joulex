@@ -307,17 +307,46 @@ impl<'a> Scheduler<'a> {
                 SortOrder::Command => {
                     println!("{}", "Relative speed comparison".bold());
 
+                    let show_reference_annotations = self.options.reference_command.is_some();
+                    let reference_command = if show_reference_annotations {
+                        annotated_results
+                            .iter()
+                            .find(|r| r.is_reference)
+                            .map(|r| r.result.command_with_unused_parameters.as_str())
+                    } else {
+                        None
+                    };
+
                     for item in annotated_results {
-                        println!(
-                            "  {}{}  {}",
-                            format!("{:10.2}", item.relative_speed).bold().green(),
-                            if item.is_reference {
-                                "        ".into()
-                            } else if let Some(stddev) = item.relative_speed_stddev {
-                                format!(" ± {}", format!("{stddev:5.2}").green())
+                        let stddev_suffix = if item.is_reference {
+                            "        ".into()
+                        } else if let Some(stddev) = item.relative_speed_stddev {
+                            format!(" ± {}", format!("{stddev:5.2}").green())
+                        } else {
+                            "        ".into()
+                        };
+
+                        let reference_annotation =
+                            if show_reference_annotations && !item.is_reference {
+                                let ref_cmd = reference_command.unwrap();
+                                match item.relative_ordering {
+                                    Ordering::Less => {
+                                        format!(" times faster than {ref_cmd}")
+                                    }
+                                    Ordering::Greater => {
+                                        format!(" times slower than {ref_cmd}")
+                                    }
+                                    Ordering::Equal => format!(" as fast as {ref_cmd}"),
+                                }
                             } else {
-                                "        ".into()
-                            },
+                                String::new()
+                            };
+
+                        println!(
+                            "  {}{}{}  {}",
+                            format!("{:10.2}", item.relative_speed).bold().green(),
+                            stddev_suffix,
+                            reference_annotation,
                             &item.result.command_with_unused_parameters,
                         );
                     }
