@@ -14,6 +14,39 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 rust-version = "1.88.0"
+# Only ship what is needed to build, test and document the crate
+# (no CI config, specs, scripts or images).
+include = [
+    "/src/**/*",
+    "/build.rs",
+    "/tests/**/*",
+    "/doc/joulex.1",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+]
+
+# Prebuilt binaries for `cargo binstall joulex`, matching the release archives
+# built by .github/workflows/CICD.yml: joulex-v<version>-<target>.tar.gz (.zip on
+# Windows) containing joulex-v<version>-<target>/joulex(.exe).
+# The extension is spelled out because binstall's { archive-suffix } is ".tgz".
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.i686-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
+
+[package.metadata.binstall.overrides.aarch64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.zip"
+pkg-fmt = "zip"
 
 [features]
 # Use the nightly feature windows_process_extensions_main_thread_handle

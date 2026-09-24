@@ -63,6 +63,18 @@ jobs:
         persist-credentials: false
     - run: cargo fmt -- --check
 
+  check_crate_package:
+    name: Check the crate can be published
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+    # Catches missing files in the `include` list, invalid metadata and
+    # build failures of the packaged sources, without uploading anything.
+    - run: cargo publish --dry-run --locked
+
   min_version:
     name: Minimum supported rust version
     runs-on: ubuntu-24.04
