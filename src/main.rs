@@ -53,6 +53,9 @@ fn run() -> Result<()> {
         let shell = parse_shell(shell)?;
         let mut command = build_command();
         clap_complete::generate(shell, &mut command, "joulex", &mut std::io::stdout());
+        if shell == Shell::Fish {
+            print!("{}", cli::FISH_COMMAND_COMPLETION);
+        }
         return Ok(());
     }
 

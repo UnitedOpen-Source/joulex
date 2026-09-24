@@ -10,6 +10,14 @@ use clap::{
 
 pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
 
+/// Appended to the clap-generated fish completions: complete executables from
+/// `$PATH` for the benchmarked command (the first positional argument), which
+/// clap cannot express (port of hyperfine#896, see hyperfine#872).
+pub const FISH_COMMAND_COMPLETION: &str = "
+# Complete executables from $PATH for the benchmarked command (hyperfine#872)
+complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
+";
+
 pub fn get_cli_arguments<'a, I, T>(args: I) -> ArgMatches
 where
     I: IntoIterator<Item = T>,
