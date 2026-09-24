@@ -333,8 +333,6 @@ impl<'a> Scheduler<'a> {
                     }
                 }
                 SortOrder::Command => {
-                    println!("{}", "Relative speed comparison".bold());
-
                     let show_reference_annotations = self.options.reference_command.is_some();
                     let reference_command = if show_reference_annotations {
                         annotated_results
@@ -345,6 +343,22 @@ impl<'a> Scheduler<'a> {
                         None
                     };
 
+                    if let Some(ref_cmd) = reference_command {
+                        println!(
+                            "{} (reference: {})",
+                            "Relative speed comparison".bold(),
+                            ref_cmd.cyan()
+                        );
+                    } else {
+                        println!("{}", "Relative speed comparison".bold());
+                    }
+
+                    let max_cmd_len = annotated_results
+                        .iter()
+                        .map(|r| r.result.command_with_unused_parameters.len())
+                        .max()
+                        .unwrap_or(0);
+
                     for item in annotated_results {
                         let stddev_suffix = if item.is_reference {
                             "        ".into()
@@ -354,28 +368,39 @@ impl<'a> Scheduler<'a> {
                             "        ".into()
                         };
 
-                        let reference_annotation =
-                            if show_reference_annotations && !item.is_reference {
+                        let reference_annotation = if show_reference_annotations {
+                            if item.is_reference {
+                                format!("  {}", "(reference)".dimmed())
+                            } else {
                                 let ref_cmd = reference_command.unwrap();
-                                match item.relative_ordering {
+                                let desc = match item.relative_ordering {
                                     Ordering::Less => {
-                                        format!(" times faster than {ref_cmd}")
+                                        format!(
+                                            "{:.2} times faster than {ref_cmd}",
+                                            item.relative_speed
+                                        )
                                     }
                                     Ordering::Greater => {
-                                        format!(" times slower than {ref_cmd}")
+                                        format!(
+                                            "{:.2} times slower than {ref_cmd}",
+                                            item.relative_speed
+                                        )
                                     }
-                                    Ordering::Equal => format!(" as fast as {ref_cmd}"),
-                                }
-                            } else {
-                                String::new()
-                            };
+                                    Ordering::Equal => format!("as fast as {ref_cmd}"),
+                                };
+                                format!("  {}", desc)
+                            }
+                        } else {
+                            String::new()
+                        };
 
                         println!(
-                            "  {}{}{}  {}",
+                            "  {}{}  {:<width$}{}",
                             format!("{:10.2}", item.relative_speed).bold().green(),
                             stddev_suffix,
-                            reference_annotation,
                             item.result.command_with_unused_parameters,
+                            reference_annotation,
+                            width = max_cmd_len,
                         );
                     }
                 }
