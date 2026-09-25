@@ -133,8 +133,14 @@ impl<'a> Command<'a> {
             Some(argv) => self.get_argv(argv),
             None => {
                 let command_line = self.get_command_line();
-                shell_words::split(&command_line)
-                    .with_context(|| format!("Failed to parse command '{command_line}'"))?
+                // On Windows, split like the C runtime does, so that paths
+                // such as `C:\tools\app.exe` keep their backslashes.
+                #[cfg(windows)]
+                let tokens = split_windows_command_line(&command_line);
+                #[cfg(not(windows))]
+                let tokens = shell_words::split(&command_line)
+                    .with_context(|| format!("Failed to parse command '{command_line}'"))?;
+                tokens
             }
         }
         .into_iter();
@@ -183,6 +189,84 @@ impl<'a> Command<'a> {
         }
         result
     }
+}
+
+/// Split a command line into arguments with the rules of the Microsoft C
+/// runtime (`CommandLineToArgvW`), which Windows programs use to parse their
+/// own command line:
+/// - arguments are separated by spaces or tabs, unless inside double quotes;
+/// - `2n` backslashes followed by `"` give `n` backslashes and toggle quoting,
+///   `2n+1` backslashes followed by `"` give `n` backslashes and a literal `"`;
+/// - backslashes that aren't followed by `"` are literal (`C:\tools\app.exe`);
+/// - inside quotes, `""` is a literal `"`;
+/// - in the program name (the first argument) backslashes are always literal.
+#[cfg(any(windows, test))]
+fn split_windows_command_line(command_line: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut chars = command_line
+        .trim_start_matches([' ', '\t'])
+        .chars()
+        .peekable();
+
+    // The program name: quotes toggle, nothing is escaped.
+    if chars.peek().is_some() {
+        let mut program = String::new();
+        let mut in_quotes = false;
+        while let Some(c) = chars.next_if(|&c| in_quotes || !matches!(c, ' ' | '\t')) {
+            if c == '"' {
+                in_quotes = !in_quotes;
+            } else {
+                program.push(c);
+            }
+        }
+        args.push(program);
+    }
+
+    let mut current = String::new();
+    let mut in_arg = false;
+    let mut in_quotes = false;
+    while let Some(c) = chars.next() {
+        match c {
+            ' ' | '\t' if !in_quotes => {
+                if in_arg {
+                    args.push(std::mem::take(&mut current));
+                    in_arg = false;
+                }
+            }
+            '\\' => {
+                in_arg = true;
+                let mut backslashes = 1;
+                while chars.next_if_eq(&'\\').is_some() {
+                    backslashes += 1;
+                }
+                if chars.peek() == Some(&'"') {
+                    current.extend(std::iter::repeat_n('\\', backslashes / 2));
+                    if backslashes % 2 == 1 {
+                        current.push('"');
+                        chars.next();
+                    }
+                } else {
+                    current.extend(std::iter::repeat_n('\\', backslashes));
+                }
+            }
+            '"' => {
+                in_arg = true;
+                if in_quotes && chars.next_if_eq(&'"').is_some() {
+                    current.push('"');
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            }
+            c => {
+                in_arg = true;
+                current.push(c);
+            }
+        }
+    }
+    if in_arg {
+        args.push(current);
+    }
+    args
 }
 
 /// A collection of commands that should be benchmarked
@@ -1085,4 +1169,34 @@ fn test_argv_from_cli_arguments() {
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     let names: Vec<_> = commands.iter().map(|c| c.get_name()).collect();
     assert_eq!(names, ["name"]);
+}
+
+#[test]
+fn test_split_windows_command_line() {
+    let split = |s: &str| split_windows_command_line(s);
+    assert_eq!(
+        split(r"C:\tools\app.exe --flag"),
+        [r"C:\tools\app.exe", "--flag"]
+    );
+    assert_eq!(
+        split(r#""C:\Program Files\app.exe" "a b"  c"#),
+        [r"C:\Program Files\app.exe", "a b", "c"]
+    );
+    // Examples from the Microsoft documentation of the C runtime
+    assert_eq!(split(r#"app "a b c" d e"#), ["app", "a b c", "d", "e"]);
+    assert_eq!(
+        split(r#"app "ab\"c" "\\" d"#),
+        ["app", r#"ab"c"#, r"\", "d"]
+    );
+    assert_eq!(
+        split(r#"app a\\\b d"e f"g h"#),
+        ["app", r"a\\\b", "de fg", "h"]
+    );
+    assert_eq!(split(r#"app a\\\"b c d"#), ["app", r#"a\"b"#, "c", "d"]);
+    assert_eq!(split(r#"app a\\\\"b c" d e"#), ["app", r"a\\b c", "d", "e"]);
+    assert_eq!(split(r#"app a"b"" c d"#), ["app", r#"ab" c d"#]);
+    // Empty quoted arguments are kept; surrounding whitespace is not
+    assert_eq!(split("\t app \"\"  x "), ["app", "", "x"]);
+    assert_eq!(split(""), Vec::<String>::new());
+    assert_eq!(split("   "), Vec::<String>::new());
 }

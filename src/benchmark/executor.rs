@@ -193,6 +193,25 @@ impl<'a> ShellExecutor<'a> {
     }
 }
 
+/// `cmd.exe /C ./app.exe` fails ("'.' is not recognized as an internal or
+/// external command"): cmd only understands backslashes in the program path.
+/// Rewrite the forward slashes of a relative program path (`./…`, `../…`) to
+/// backslashes. The arguments are left untouched.
+#[cfg(any(windows, test))]
+fn normalize_relative_command_path_for_cmd(command_line: &str) -> String {
+    if !(command_line.starts_with("./") || command_line.starts_with("../")) {
+        return command_line.to_string();
+    }
+    let end = command_line
+        .find(char::is_whitespace)
+        .unwrap_or(command_line.len());
+    format!(
+        "{}{}",
+        command_line[..end].replace('/', "\\"),
+        &command_line[end..]
+    )
+}
+
 impl Executor for ShellExecutor<'_> {
     fn run_command_and_measure(
         &self,
@@ -209,7 +228,9 @@ impl Executor for ShellExecutor<'_> {
         // Windows needs special treatment for its behavior on parsing cmd arguments
         if on_windows_cmd {
             #[cfg(windows)]
-            command_builder.raw_arg(command.get_command_line());
+            command_builder.raw_arg(normalize_relative_command_path_for_cmd(
+                &command.get_command_line(),
+            ));
         } else {
             command_builder.arg(command.get_command_line());
         }
@@ -383,4 +404,22 @@ impl Executor for MockExecutor {
 #[test]
 fn test_mock_executor_extract_time() {
     assert_eq!(MockExecutor::extract_time("sleep 0.1"), 0.1);
+}
+
+#[test]
+fn test_normalize_relative_command_path_for_cmd() {
+    for (input, expected) in [
+        ("./app.exe", ".\\app.exe"),
+        (
+            "./target/release/app.exe --x a/b",
+            ".\\target\\release\\app.exe --x a/b",
+        ),
+        ("../bin/app.exe\t./x", "..\\bin\\app.exe\t./x"),
+        ("app.exe ./x", "app.exe ./x"),
+        ("C:/tools/app.exe", "C:/tools/app.exe"),
+        (".hidden/app", ".hidden/app"),
+        ("", ""),
+    ] {
+        assert_eq!(normalize_relative_command_path_for_cmd(input), expected);
+    }
 }
