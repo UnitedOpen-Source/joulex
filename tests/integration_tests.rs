@@ -1922,3 +1922,109 @@ fn export_to_a_fifo_works() {
     use std::os::unix::fs::FileTypeExt;
     assert!(std::fs::metadata(&fifo).unwrap().file_type().is_fifo());
 }
+
+#[cfg(unix)]
+#[test]
+fn test_ctrlc_interruption_recovers_timing_and_exports() {
+    use std::process::{Command, Stdio};
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("interrupted.json");
+
+    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+        .arg("--runs=50")
+        .arg("--shell=none")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sleep 0.1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn joulex");
+
+    std::thread::sleep(Duration::from_millis(800));
+
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+
+    let output = child.wait_with_output().expect("failed to wait on child");
+    assert_eq!(output.status.code(), Some(130));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("interrupted after"),
+        "stdout was:\n{stdout}"
+    );
+
+    assert!(export_path.exists());
+    let json_content = std::fs::read_to_string(&export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_content).unwrap();
+    assert_eq!(parsed["interrupted"], true);
+
+    let results = parsed["results"]
+        .as_array()
+        .expect("results should be an array");
+    assert_eq!(results.len(), 1);
+    let runs_planned = results[0]["runs_planned"]
+        .as_u64()
+        .expect("runs_planned should be set");
+    assert_eq!(runs_planned, 50);
+
+    let times = results[0]["times"]
+        .as_array()
+        .expect("times should be an array");
+    assert!(
+        !times.is_empty() && times.len() < 50,
+        "times.len() was {}",
+        times.len()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_ctrlc_round_robin_interruption() {
+    use std::process::{Command, Stdio};
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let export_path = tempdir.path().join("interrupted_rr.json");
+
+    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+        .arg("--runs=40")
+        .arg("--shell=none")
+        .arg("--schedule=round-robin")
+        .arg("--export-json")
+        .arg(&export_path)
+        .arg("sleep 0.1")
+        .arg("sleep 0.1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn joulex");
+
+    std::thread::sleep(Duration::from_millis(1000));
+
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+
+    let output = child.wait_with_output().expect("failed to wait on child");
+    assert_eq!(output.status.code(), Some(130));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("interrupted after") || stdout.contains("interrupted"),
+        "stdout was:\n{stdout}"
+    );
+
+    assert!(export_path.exists());
+    let json_content = std::fs::read_to_string(&export_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_content).unwrap();
+    assert_eq!(parsed["interrupted"], true);
+    let results = parsed["results"].as_array().unwrap();
+    assert!(!results.is_empty());
+}

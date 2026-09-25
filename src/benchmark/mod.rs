@@ -231,6 +231,9 @@ impl<'a> BenchmarkRunner<'a> {
     pub fn run_auto_warmup(&mut self, mut on_run: impl FnMut()) -> Result<WarmupSummary> {
         let mut times = Vec::new();
         for iteration in 0..AUTO_WARMUP_MAX_RUNS {
+            if crate::util::interrupt::interrupted() {
+                anyhow::bail!(crate::error::Interrupted);
+            }
             times.push(self.run_warmup_iteration(iteration)?);
             on_run();
             if times.len() >= AUTO_WARMUP_WINDOW {
@@ -486,13 +489,33 @@ impl<'a> BenchmarkRunner<'a> {
             String::new()
         };
 
+        let is_interrupted = crate::util::interrupt::interrupted() && t_num < self.count as usize;
+        let runs_planned = if is_interrupted {
+            Some(self.count)
+        } else {
+            None
+        };
+
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
+                let suffix = if is_interrupted {
+                    format!("  (interrupted after {t_num} of {} runs)", self.count)
+                        .yellow()
+                        .to_string()
+                } else {
+                    String::new()
+                };
                 println!(
-                    "{}{}: {}",
+                    "{}{}: {}{}",
                     "Benchmark ".bold(),
                     (self.display_number + 1).to_string().bold(),
                     self.command.get_name_with_unused_parameters(),
+                    suffix,
+                );
+            } else if is_interrupted {
+                println!(
+                    "  {}",
+                    format!("(interrupted after {t_num} of {} runs)", self.count).yellow()
                 );
             }
 
@@ -730,6 +753,10 @@ impl<'a> BenchmarkRunner<'a> {
             (None, None, None)
         };
 
+        if let Some(sampler) = self.energy_sampler.as_mut() {
+            let _ = sampler.stop();
+        }
+
         Ok(BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -762,6 +789,7 @@ impl<'a> BenchmarkRunner<'a> {
             omitted_failed_runs,
             discarded_outliers,
             resources,
+            runs_planned,
         })
     }
 }
@@ -792,7 +820,7 @@ impl<'a> Benchmark<'a> {
     }
 
     /// Run the benchmark for a single command in grouped mode
-    pub fn run(&self) -> Result<BenchmarkResult> {
+    pub fn run(&self) -> Result<Option<BenchmarkResult>> {
         let mut runner = BenchmarkRunner::new(
             self.number,
             self.display_number,
@@ -810,6 +838,13 @@ impl<'a> Benchmark<'a> {
             );
         }
 
+        if crate::util::interrupt::interrupted() {
+            if self.options.output_style != OutputStyleOption::Disabled {
+                println!("  {}", "(interrupted before completing any runs)".yellow());
+            }
+            return Ok(None);
+        }
+
         runner.run_setup()?;
 
         // Warmup phase
@@ -823,13 +858,24 @@ impl<'a> Benchmark<'a> {
             } else {
                 None
             };
-            runner.warmup = Some(runner.run_auto_warmup(|| {
+            let warmup_res = runner.run_auto_warmup(|| {
                 if let Some(bar) = progress_bar.as_ref() {
                     bar.inc(1)
                 }
-            })?);
+            });
             if let Some(bar) = progress_bar.as_ref() {
                 bar.finish_and_clear()
+            }
+            match warmup_res {
+                Ok(w) => runner.warmup = Some(w),
+                Err(e) if e.is::<crate::error::Interrupted>() => {
+                    let _ = runner.run_cleanup();
+                    if self.options.output_style != OutputStyleOption::Disabled {
+                        println!("  {}", "(interrupted before completing any runs)".yellow());
+                    }
+                    return Ok(None);
+                }
+                Err(e) => return Err(e),
             }
         } else if self.options.warmup_count > 0 {
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
@@ -847,13 +893,33 @@ impl<'a> Benchmark<'a> {
             };
 
             for i in 0..self.options.warmup_count {
-                let _ = runner.run_warmup_iteration(i)?;
-                if let Some(bar) = progress_bar.as_ref() {
-                    bar.inc(1)
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
+                match runner.run_warmup_iteration(i) {
+                    Ok(_) => {
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.inc(1)
+                        }
+                    }
+                    Err(e) if e.is::<crate::error::Interrupted>() => break,
+                    Err(e) => {
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.finish_and_clear();
+                        }
+                        return Err(e);
+                    }
                 }
             }
             if let Some(bar) = progress_bar.as_ref() {
                 bar.finish_and_clear()
+            }
+            if crate::util::interrupt::interrupted() {
+                let _ = runner.run_cleanup();
+                if self.options.output_style != OutputStyleOption::Disabled {
+                    println!("  {}", "(interrupted before completing any runs)".yellow());
+                }
+                return Ok(None);
             }
         }
 
@@ -868,7 +934,36 @@ impl<'a> Benchmark<'a> {
             None
         };
 
-        runner.run_initial_measurement()?;
+        if crate::util::interrupt::interrupted() {
+            if let Some(bar) = progress_bar.as_ref() {
+                bar.finish_and_clear();
+            }
+            let _ = runner.run_cleanup();
+            if self.options.output_style != OutputStyleOption::Disabled {
+                println!("  {}", "(interrupted before completing any runs)".yellow());
+            }
+            return Ok(None);
+        }
+
+        match runner.run_initial_measurement() {
+            Ok(()) => {}
+            Err(e) if e.is::<crate::error::Interrupted>() => {
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.finish_and_clear();
+                }
+                let _ = runner.run_cleanup();
+                if self.options.output_style != OutputStyleOption::Disabled {
+                    println!("  {}", "(interrupted before completing any runs)".yellow());
+                }
+                return Ok(None);
+            }
+            Err(e) => {
+                if let Some(bar) = progress_bar.as_ref() {
+                    bar.finish_and_clear();
+                }
+                return Err(e);
+            }
+        }
 
         let count = runner.count;
         let count_remaining = count - 1;
@@ -883,6 +978,10 @@ impl<'a> Benchmark<'a> {
 
         // Gather statistics (perform the actual benchmark)
         for i in 0..count_remaining {
+            if crate::util::interrupt::interrupted() {
+                break;
+            }
+
             let msg = {
                 let mean = format_duration(mean(&runner.times_real), self.options.time_unit);
                 format!("Current estimate: {}", mean.to_string().green())
@@ -892,10 +991,19 @@ impl<'a> Benchmark<'a> {
                 bar.set_message(msg.to_owned())
             }
 
-            runner.run_timed_iteration(i + 1)?;
-
-            if let Some(bar) = progress_bar.as_ref() {
-                bar.inc(1)
+            match runner.run_timed_iteration(i + 1) {
+                Ok(()) => {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.inc(1)
+                    }
+                }
+                Err(e) if e.is::<crate::error::Interrupted>() => break,
+                Err(e) => {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.finish_and_clear();
+                    }
+                    return Err(e);
+                }
             }
         }
 
@@ -903,9 +1011,20 @@ impl<'a> Benchmark<'a> {
             bar.finish_and_clear()
         }
 
-        runner.run_cleanup()?;
+        if crate::util::interrupt::interrupted() {
+            let _ = runner.run_cleanup();
+        } else {
+            runner.run_cleanup()?;
+        }
 
-        runner.finish(false)
+        if runner.times_real.is_empty() {
+            if self.options.output_style != OutputStyleOption::Disabled {
+                println!("  {}", "(interrupted before completing any runs)".yellow());
+            }
+            Ok(None)
+        } else {
+            runner.finish(false).map(Some)
+        }
     }
 }
 

@@ -15,6 +15,8 @@ struct JoulexSummary<'a> {
     /// Information about the joulex run (version, command line, date, labels, system)
     #[serde(skip_serializing_if = "Option::is_none")]
     joulex: Option<&'a ExportMetadata>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    interrupted: bool,
     results: Vec<ResultEntry<'a>>,
 }
 
@@ -61,6 +63,7 @@ impl Exporter for JsonExporter {
 
         let mut output = to_vec_pretty(&JoulexSummary {
             joulex: self.metadata.as_ref(),
+            interrupted: crate::util::interrupt::interrupted(),
             results,
         });
         if let Ok(ref mut content) = output {

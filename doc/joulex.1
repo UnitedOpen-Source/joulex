@@ -340,6 +340,17 @@ Bootstrap confidence intervals and statistical significance:
 \fBjoulex\fR \fB\-\-deep\-stats\fR \fB\-\-reference\fR 'python script.py' 'pypy script.py'
 .fi
 .RE
+.SH EXIT STATUS
+.LP
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error (invalid options, command failure when not ignored, etc.).
+.TP
+.B 130
+Interrupted by SIGINT / Ctrl-C (partial results and exports preserved).
 .SH AUTHORS
 .LP
 Matheus Breguêz <matbrgz@gmail.com>

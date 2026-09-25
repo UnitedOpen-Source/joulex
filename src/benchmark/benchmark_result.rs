@@ -104,6 +104,10 @@ pub struct BenchmarkResult {
     /// I/O), exported with --resource-usage on Unix
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<super::timing_result::ResourceSeries>,
+
+    /// Number of planned runs if the benchmark was interrupted
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_planned: Option<u64>,
 }
 
 /// Percentiles of the run times, in seconds.

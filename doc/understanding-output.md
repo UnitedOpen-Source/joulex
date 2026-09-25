@@ -149,3 +149,8 @@ later combine it with a live run: `joulex --import-json main.json './target/rele
 8. **Energy measurements** are the most sensitive to all of the above, because the RAPL
    counters include everything the CPU package does. Prefer longer runs (≥ 100 ms), a quiet
    machine, and compare commands with `--schedule round-robin`.
+
+## Graceful Interruption (Ctrl-C)
+
+- **First Ctrl-C**: Stops starting new benchmark runs. Any runs completed so far for the active benchmark are preserved, and partial statistics, the relative-speed summary, and all exports are written (with exit code 130 and `"interrupted": true` in JSON).
+- **Second Ctrl-C**: Forces immediate termination.

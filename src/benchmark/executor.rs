@@ -87,6 +87,10 @@ fn run_command_and_measure_common(
         .with_context(|| format!("Failed to run command '{command_name}'"))?;
 
     if !result.status.success() {
+        if crate::util::interrupt::interrupted() {
+            bail!(crate::error::Interrupted);
+        }
+
         use crate::util::exit_code::extract_exit_code;
 
         let should_fail = match command_failure_action {

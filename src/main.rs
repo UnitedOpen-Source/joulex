@@ -43,6 +43,8 @@ fn parse_shell(name: &str) -> Result<Shell> {
 }
 
 fn run() -> Result<()> {
+    crate::util::interrupt::install()?;
+
     // Enabled ANSI colors on Windows 10
     #[cfg(windows)]
     colored::control::set_virtual_terminal(true).unwrap();
@@ -89,6 +91,10 @@ fn run() -> Result<()> {
     scheduler.print_relative_speed_comparison();
     scheduler.final_export()?;
 
+    if crate::util::interrupt::interrupted() {
+        std::process::exit(130);
+    }
+
     Ok(())
 }
 
@@ -96,6 +102,9 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
+            if crate::util::interrupt::interrupted() {
+                std::process::exit(130);
+            }
             eprintln!("{} {:#}", "Error:".red(), e);
             std::process::exit(1);
         }

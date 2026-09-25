@@ -71,3 +71,7 @@ pub enum OptionsError<'a> {
     #[error("Invalid '--affinity': {0}")]
     InvalidAffinity(String),
 }
+
+#[derive(Debug, Error)]
+#[error("Benchmark interrupted by user")]
+pub struct Interrupted;
