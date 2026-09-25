@@ -25,9 +25,10 @@ use crate::util::units::{format_bytes, Second};
 use benchmark_result::{BenchmarkResult, OmittedRun};
 use timing_result::TimingResult;
 
+use crate::output::colors;
 use crate::stats::basic::{mean, median, standard_deviation};
 use anyhow::{anyhow, bail, Result};
-use colored::*;
+use colored::Colorize as _;
 
 use self::executor::Executor;
 
@@ -499,9 +500,11 @@ impl<'a> BenchmarkRunner<'a> {
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
                 let suffix = if is_interrupted {
-                    format!("  (interrupted after {t_num} of {} runs)", self.count)
-                        .yellow()
-                        .to_string()
+                    colors::yellow(format!(
+                        "  (interrupted after {t_num} of {} runs)",
+                        self.count
+                    ))
+                    .to_string()
                 } else {
                     String::new()
                 };
@@ -515,7 +518,10 @@ impl<'a> BenchmarkRunner<'a> {
             } else if is_interrupted {
                 println!(
                     "  {}",
-                    format!("(interrupted after {t_num} of {} runs)", self.count).yellow()
+                    colors::yellow(format!(
+                        "(interrupted after {t_num} of {} runs)",
+                        self.count
+                    ))
                 );
             }
 
@@ -527,13 +533,13 @@ impl<'a> BenchmarkRunner<'a> {
                 };
                 println!(
                     "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
-                    "abs".green().bold(),
-                    mean_str.green().bold(),
+                    colors::green("abs").bold(),
+                    colors::green(mean_str).bold(),
                     "        ", // alignment
-                    user_str.blue(),
-                    system_str.blue(),
-                    cpu_str.blue(),
-                    mem_str.blue(),
+                    colors::blue(user_str),
+                    colors::blue(system_str),
+                    colors::blue(cpu_str),
+                    colors::blue(mem_str),
                     suffix,
                 );
             } else {
@@ -541,24 +547,24 @@ impl<'a> BenchmarkRunner<'a> {
 
                 println!(
                     "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",
-                    "mean".green().bold(),
-                    "σ".green(),
-                    mean_str.green().bold(),
-                    stddev_str.green(),
-                    user_str.blue(),
-                    system_str.blue(),
-                    cpu_str.blue(),
-                    mem_str.blue()
+                    colors::green("mean").bold(),
+                    colors::green("σ"),
+                    colors::green(mean_str).bold(),
+                    colors::green(stddev_str),
+                    colors::blue(user_str),
+                    colors::blue(system_str),
+                    colors::blue(cpu_str),
+                    colors::blue(mem_str)
                 );
 
                 println!(
                     "  Range ({} … {} … {}):   {:>8} … {:>8} … {:>8}    {}",
-                    "min".cyan(),
-                    "median".yellow(),
-                    "max".purple(),
-                    min_str.cyan(),
-                    median_str.yellow(),
-                    max_str.purple(),
+                    colors::cyan("min"),
+                    colors::yellow("median"),
+                    colors::purple("max"),
+                    colors::cyan(min_str),
+                    colors::yellow(median_str),
+                    colors::purple(max_str),
                     num_str.dimmed()
                 );
             }
@@ -611,9 +617,9 @@ impl<'a> BenchmarkRunner<'a> {
 
                     println!(
                         "  Energy ({}):        {:>14}    [Power: {}]",
-                        "mean".yellow().bold(),
-                        energy_str.yellow().bold(),
-                        format!("{watts:.2} W").yellow()
+                        colors::yellow("mean").bold(),
+                        colors::yellow(energy_str).bold(),
+                        colors::yellow(format!("{watts:.2} W"))
                     );
                 } else {
                     println!(
@@ -729,7 +735,7 @@ impl<'a> BenchmarkRunner<'a> {
             eprintln!(" ");
 
             for warning in &warnings {
-                eprintln!("  {}: {}", "Warning".yellow(), warning);
+                eprintln!("  {}: {}", colors::yellow("Warning"), warning);
             }
         }
 
@@ -840,7 +846,10 @@ impl<'a> Benchmark<'a> {
 
         if crate::util::interrupt::interrupted() {
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!("  {}", "(interrupted before completing any runs)".yellow());
+                println!(
+                    "  {}",
+                    colors::yellow("(interrupted before completing any runs)")
+                );
             }
             return Ok(None);
         }
@@ -871,7 +880,10 @@ impl<'a> Benchmark<'a> {
                 Err(e) if e.is::<crate::error::Interrupted>() => {
                     let _ = runner.run_cleanup();
                     if self.options.output_style != OutputStyleOption::Disabled {
-                        println!("  {}", "(interrupted before completing any runs)".yellow());
+                        println!(
+                            "  {}",
+                            colors::yellow("(interrupted before completing any runs)")
+                        );
                     }
                     return Ok(None);
                 }
@@ -917,7 +929,10 @@ impl<'a> Benchmark<'a> {
             if crate::util::interrupt::interrupted() {
                 let _ = runner.run_cleanup();
                 if self.options.output_style != OutputStyleOption::Disabled {
-                    println!("  {}", "(interrupted before completing any runs)".yellow());
+                    println!(
+                        "  {}",
+                        colors::yellow("(interrupted before completing any runs)")
+                    );
                 }
                 return Ok(None);
             }
@@ -940,7 +955,10 @@ impl<'a> Benchmark<'a> {
             }
             let _ = runner.run_cleanup();
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!("  {}", "(interrupted before completing any runs)".yellow());
+                println!(
+                    "  {}",
+                    colors::yellow("(interrupted before completing any runs)")
+                );
             }
             return Ok(None);
         }
@@ -953,7 +971,10 @@ impl<'a> Benchmark<'a> {
                 }
                 let _ = runner.run_cleanup();
                 if self.options.output_style != OutputStyleOption::Disabled {
-                    println!("  {}", "(interrupted before completing any runs)".yellow());
+                    println!(
+                        "  {}",
+                        colors::yellow("(interrupted before completing any runs)")
+                    );
                 }
                 return Ok(None);
             }
@@ -984,7 +1005,7 @@ impl<'a> Benchmark<'a> {
 
             let msg = {
                 let mean = format_duration(mean(&runner.times_real), self.options.time_unit);
-                format!("Current estimate: {}", mean.to_string().green())
+                format!("Current estimate: {}", colors::green(mean.to_string()))
             };
 
             if let Some(bar) = progress_bar.as_ref() {
@@ -1019,7 +1040,10 @@ impl<'a> Benchmark<'a> {
 
         if runner.times_real.is_empty() {
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!("  {}", "(interrupted before completing any runs)".yellow());
+                println!(
+                    "  {}",
+                    colors::yellow("(interrupted before completing any runs)")
+                );
             }
             Ok(None)
         } else {
