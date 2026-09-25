@@ -33,6 +33,13 @@ pub enum Warnings {
     Multimodal(f64),
     /// Outliers cause most of the variance: fraction, number of outliers
     InflatedVariance(f64, usize),
+    /// `--subtract`: the baseline was slower than some runs (clamped to 0)
+    BaselineLarger {
+        runs: usize,
+        total: usize,
+    },
+    /// `--subtract`: the baseline's σ is large compared with the net time
+    NoisyBaseline,
     /// `--target-precision` not reached within the budget or `--max-runs`
     TargetPrecisionNotReached {
         target: f64,
@@ -144,6 +151,17 @@ impl fmt::Display for Warnings {
                  '--export-markdown-runs'). Common causes are caching effects, CPU frequency \
                  changes, P-/E-core migration, or a background job that starts mid-benchmark.",
                 crate::stats::diagnostics::BIMODALITY_THRESHOLD
+            ),
+            Warnings::BaselineLarger { runs, total } => write!(
+                f,
+                "The '--subtract' baseline was slower than the benchmarked command in {runs} of \
+                 {total} runs; those were counted as 0. The net time is too small to be measured \
+                 this way."
+            ),
+            Warnings::NoisyBaseline => write!(
+                f,
+                "The noise (σ) of the '--subtract' baseline is more than 10% of the net time, so \
+                 the net result is imprecise. Consider more runs or a quieter baseline."
             ),
             Warnings::TargetPrecisionNotReached {
                 target,

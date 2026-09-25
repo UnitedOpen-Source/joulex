@@ -208,6 +208,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         per_run_parameters: None,
         precision: None,
         shell: None,
+        baseline: None,
     }
 }
 

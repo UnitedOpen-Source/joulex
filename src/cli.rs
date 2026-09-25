@@ -483,6 +483,18 @@ pub fn build_command() -> Command {
             ),
         )
         .arg(
+            Arg::new("subtract")
+                .long("subtract")
+                .action(ArgAction::Set)
+                .value_name("CMD")
+                .value_hint(ValueHint::CommandString)
+                .help("Measure CMD first (with the same warmup and number of runs) and subtract \
+                       its mean wall-clock, user and system time from every run of the \
+                       benchmarked commands, to measure a delta: e.g. \
+                       --subtract \"python -c ''\" 'python -c \"import numpy\"'. Runs faster \
+                       than the baseline count as 0, with a warning. Energy is not subtracted."),
+        )
+        .arg(
             Arg::new("target-precision")
                 .long("target-precision")
                 .action(ArgAction::Set)

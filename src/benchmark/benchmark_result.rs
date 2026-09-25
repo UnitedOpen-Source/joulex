@@ -132,6 +132,32 @@ pub struct BenchmarkResult {
     /// (`--shell` given per command); "none" without a shell
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shell: Option<String>,
+
+    /// `--subtract`: the baseline whose mean was subtracted from every run
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<Baseline>,
+}
+
+/// `--subtract CMD`: the measured baseline.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Baseline {
+    pub command: String,
+    /// Mean wall-clock time in seconds
+    pub mean: Second,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stddev: Option<Second>,
+    /// Mean user and system time in seconds
+    pub user: Second,
+    pub system: Second,
+    pub runs: usize,
+    /// Runs of the benchmarked command that were faster than the baseline
+    /// (clamped to 0)
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub clamped_runs: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// `--target-precision`: how precisely the mean is known.

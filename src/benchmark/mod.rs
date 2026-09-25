@@ -10,7 +10,7 @@ use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
 use crate::energy::{get_energy_sampler, EnergySampler};
 use crate::options::{
-    CmdFailureAction, CommandOutputPolicy, FirstRunPolicy, Options, OutputStyleOption,
+    CmdFailureAction, CommandOutputPolicy, FirstRunPolicy, Options, OutputStyleOption, RunBounds,
 };
 use crate::outlier_detection::{
     modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
@@ -28,7 +28,7 @@ use timing_result::TimingResult;
 
 use crate::output::colors;
 use crate::stats::basic::{mean, median, standard_deviation};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use colored::Colorize as _;
 
 use self::executor::Executor;
@@ -65,6 +65,8 @@ pub struct BenchmarkRunner<'a> {
     pub initial_total_time: f64,
     /// `--first-run=separate` with warmup: wall-clock time of the first warmup run
     pub cold_warmup_time: Option<Second>,
+    /// `--subtract`: the baseline subtracted from every run
+    pub baseline: Option<benchmark_result::Baseline>,
 }
 
 /// "1%", "0.5%"
@@ -144,6 +146,7 @@ impl<'a> BenchmarkRunner<'a> {
             warmup: None,
             initial_total_time: 0.0,
             cold_warmup_time: None,
+            baseline: None,
         }
     }
 
@@ -295,6 +298,19 @@ impl<'a> BenchmarkRunner<'a> {
         }
     }
 
+    /// `--subtract`: subtract the baseline's mean from a run (clamped to 0).
+    fn subtract_baseline(&mut self, mut res: TimingResult) -> TimingResult {
+        if let Some(baseline) = self.baseline.as_mut() {
+            if res.time_real < baseline.mean {
+                baseline.clamped_runs += 1;
+            }
+            res.time_real = (res.time_real - baseline.mean).max(0.0);
+            res.time_user = (res.time_user - baseline.user).max(0.0);
+            res.time_system = (res.time_system - baseline.system).max(0.0);
+        }
+        res
+    }
+
     /// The run times that count for `--target-precision`: without a first run
     /// that `--first-run` excludes.
     fn measured_times(&self) -> &[Second] {
@@ -412,6 +428,8 @@ impl<'a> BenchmarkRunner<'a> {
 
         self.count = self.whole_cycles(count) + self.extra_runs();
 
+        // The run count above is estimated from the gross time
+        let res = self.subtract_baseline(res);
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
@@ -442,6 +460,7 @@ impl<'a> BenchmarkRunner<'a> {
         )?;
         let energy = self.energy_sampler.as_mut().and_then(|s| s.stop());
         let success = status.success();
+        let res = self.subtract_baseline(res);
 
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);
@@ -590,6 +609,9 @@ impl<'a> BenchmarkRunner<'a> {
                 reached.map_or("?".to_string(), |r| format!("{:.1}%", r * 100.0)),
                 format_percent(target)
             ));
+        }
+        if self.baseline.is_some() {
+            excluded.push("baseline subtracted".to_string());
         }
         if first_run_excluded {
             excluded.push(match self.options.first_run {
@@ -880,6 +902,20 @@ impl<'a> BenchmarkRunner<'a> {
                 spread: warmup.spread,
             });
         }
+        if let Some(baseline) = &self.baseline {
+            if baseline.clamped_runs > 0 {
+                warnings.push(Warnings::BaselineLarger {
+                    runs: baseline.clamped_runs,
+                    total: original_run_count,
+                });
+            }
+            if baseline
+                .stddev
+                .is_some_and(|sd| t_mean > 0.0 && sd > 0.1 * t_mean)
+            {
+                warnings.push(Warnings::NoisyBaseline);
+            }
+        }
         if let Some((target, reached)) = precision_reached {
             if reached.is_none_or(|r| r > target) {
                 warnings.push(Warnings::TargetPrecisionNotReached {
@@ -1034,6 +1070,7 @@ impl<'a> BenchmarkRunner<'a> {
             first_run,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
+            baseline: self.baseline.clone(),
             shell: self
                 .options
                 .has_per_command_shells()
@@ -1050,12 +1087,82 @@ impl<'a> BenchmarkRunner<'a> {
     }
 }
 
+/// `--subtract CMD`: measure the baseline with `executor` (with the warmup
+/// and number of runs of the benchmarks) and show it.
+pub fn measure_baseline(
+    command_line: &str,
+    options: &Options,
+    executor: &dyn Executor,
+) -> Result<benchmark_result::Baseline> {
+    let command = Command::new(None, command_line);
+    let runs = match options.run_bounds {
+        RunBounds {
+            min,
+            max: Some(max),
+        } if min == max => min,
+        RunBounds { min, .. } => min.max(10),
+    }
+    .max(2);
+    let warmups = if options.warmup_auto {
+        3
+    } else {
+        options.warmup_count
+    };
+    let run = |iteration| {
+        executor.run_command_and_measure(
+            &command,
+            iteration,
+            Some(CmdFailureAction::RaiseError),
+            &CommandOutputPolicy::Null,
+        )
+    };
+    for i in 0..warmups {
+        run(BenchmarkIteration::Warmup(i))
+            .with_context(|| format!("The '--subtract' baseline '{command_line}' failed"))?;
+    }
+    let mut results = Vec::new();
+    for i in 0..runs {
+        let (result, _) = run(BenchmarkIteration::Benchmark(i))
+            .with_context(|| format!("The '--subtract' baseline '{command_line}' failed"))?;
+        results.push(result);
+    }
+    let times: Vec<Second> = results.iter().map(|r| r.time_real).collect();
+    let mean_time = mean(&times);
+    let baseline = benchmark_result::Baseline {
+        command: command_line.to_string(),
+        mean: mean_time,
+        stddev: Some(standard_deviation(&times, Some(mean_time))),
+        user: mean(&results.iter().map(|r| r.time_user).collect::<Vec<_>>()),
+        system: mean(&results.iter().map(|r| r.time_system).collect::<Vec<_>>()),
+        runs: results.len(),
+        clamped_runs: 0,
+    };
+
+    if options.output_style != OutputStyleOption::Disabled {
+        let (mean_str, unit) = format_duration_unit(baseline.mean, options.time_unit);
+        crate::outln!(
+            "{}{}",
+            "Baseline (subtracted): ".bold(),
+            crate::util::sanitize::escape_control_chars(command_line)
+        );
+        crate::outln!(
+            "  Time (mean ± σ):     {:>8} ± {:>8}    {} runs",
+            mean_str,
+            format_duration(baseline.stddev.unwrap_or(0.0), Some(unit)),
+            baseline.runs
+        );
+        crate::outln!();
+    }
+    Ok(baseline)
+}
+
 pub struct Benchmark<'a> {
     number: usize,
     display_number: usize,
     command: &'a Command<'a>,
     options: &'a Options,
     executor: &'a dyn Executor,
+    baseline: Option<benchmark_result::Baseline>,
 }
 
 impl<'a> Benchmark<'a> {
@@ -1072,10 +1179,17 @@ impl<'a> Benchmark<'a> {
             command,
             options,
             executor,
+            baseline: None,
         }
     }
 
     /// Run the benchmark for a single command in grouped mode
+    /// `--subtract`: the baseline to subtract from every run
+    pub fn with_baseline(mut self, baseline: Option<benchmark_result::Baseline>) -> Self {
+        self.baseline = baseline;
+        self
+    }
+
     pub fn run(&self) -> Result<Option<BenchmarkResult>> {
         let mut runner = BenchmarkRunner::new(
             self.number,
@@ -1084,6 +1198,7 @@ impl<'a> Benchmark<'a> {
             self.options,
             self.executor,
         );
+        runner.baseline = self.baseline.clone();
 
         if self.options.output_style != OutputStyleOption::Disabled {
             crate::outln!(
