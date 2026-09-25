@@ -50,6 +50,7 @@ fn test_markup_export_auto_ms() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -77,6 +78,7 @@ fn test_markup_export_auto_ms() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -149,6 +151,7 @@ fn test_markup_export_auto_s() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -176,6 +179,7 @@ fn test_markup_export_auto_s() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -248,6 +252,7 @@ fn test_markup_export_manual_ms() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -275,6 +280,7 @@ fn test_markup_export_manual_ms() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -346,6 +352,7 @@ fn test_markup_export_manual_s() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -373,6 +380,7 @@ fn test_markup_export_manual_s() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -443,6 +451,7 @@ fn test_markup_export_zero_mean_displays_na() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -470,6 +479,7 @@ fn test_markup_export_zero_mean_displays_na() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 

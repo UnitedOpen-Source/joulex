@@ -98,6 +98,9 @@ impl<'a> Scheduler<'a> {
 
             // 1. Setup phase for all commands
             for runner in &runners {
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
                 runner.run_setup()?;
             }
 
@@ -114,11 +117,23 @@ impl<'a> Scheduler<'a> {
                     None
                 };
                 for runner in &mut runners {
-                    runner.warmup = Some(runner.run_auto_warmup(|| {
+                    if crate::util::interrupt::interrupted() {
+                        break;
+                    }
+                    match runner.run_auto_warmup(|| {
                         if let Some(bar) = progress_bar.as_ref() {
                             bar.inc(1);
                         }
-                    })?);
+                    }) {
+                        Ok(w) => runner.warmup = Some(w),
+                        Err(e) if e.is::<crate::error::Interrupted>() => break,
+                        Err(e) => {
+                            if let Some(bar) = progress_bar.as_ref() {
+                                bar.finish_and_clear();
+                            }
+                            return Err(e);
+                        }
+                    }
                 }
                 if let Some(bar) = progress_bar.as_ref() {
                     bar.finish_and_clear();
@@ -134,11 +149,24 @@ impl<'a> Scheduler<'a> {
                     None
                 };
 
-                for w in 0..self.options.warmup_count {
+                'warmup: for w in 0..self.options.warmup_count {
                     for runner in &mut runners {
-                        let _ = runner.run_warmup_iteration(w)?;
-                        if let Some(bar) = progress_bar.as_ref() {
-                            bar.inc(1);
+                        if crate::util::interrupt::interrupted() {
+                            break 'warmup;
+                        }
+                        match runner.run_warmup_iteration(w) {
+                            Ok(_) => {
+                                if let Some(bar) = progress_bar.as_ref() {
+                                    bar.inc(1);
+                                }
+                            }
+                            Err(e) if e.is::<crate::error::Interrupted>() => break 'warmup,
+                            Err(e) => {
+                                if let Some(bar) = progress_bar.as_ref() {
+                                    bar.finish_and_clear();
+                                }
+                                return Err(e);
+                            }
                         }
                     }
                 }
@@ -160,9 +188,22 @@ impl<'a> Scheduler<'a> {
             };
 
             for runner in &mut runners {
-                runner.run_initial_measurement()?;
-                if let Some(bar) = progress_bar.as_ref() {
-                    bar.inc(1);
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
+                match runner.run_initial_measurement() {
+                    Ok(()) => {
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.inc(1);
+                        }
+                    }
+                    Err(e) if e.is::<crate::error::Interrupted>() => break,
+                    Err(e) => {
+                        if let Some(bar) = progress_bar.as_ref() {
+                            bar.finish_and_clear();
+                        }
+                        return Err(e);
+                    }
                 }
             }
 
@@ -206,12 +247,25 @@ impl<'a> Scheduler<'a> {
             };
 
             // 4. Interleaved timing iterations
-            for i in 1..max_count {
+            'timing: for i in 1..max_count {
                 for runner in &mut runners {
+                    if crate::util::interrupt::interrupted() {
+                        break 'timing;
+                    }
                     if i < runner.count {
-                        runner.run_timed_iteration(i)?;
-                        if let Some(bar) = progress_bar.as_ref() {
-                            bar.inc(1);
+                        match runner.run_timed_iteration(i) {
+                            Ok(()) => {
+                                if let Some(bar) = progress_bar.as_ref() {
+                                    bar.inc(1);
+                                }
+                            }
+                            Err(e) if e.is::<crate::error::Interrupted>() => break 'timing,
+                            Err(e) => {
+                                if let Some(bar) = progress_bar.as_ref() {
+                                    bar.finish_and_clear();
+                                }
+                                return Err(e);
+                            }
                         }
                     }
                 }
@@ -223,11 +277,26 @@ impl<'a> Scheduler<'a> {
 
             // 5. Cleanup phase
             for runner in &runners {
-                runner.run_cleanup()?;
+                if crate::util::interrupt::interrupted() {
+                    let _ = runner.run_cleanup();
+                } else {
+                    runner.run_cleanup()?;
+                }
             }
 
             // 6. Finish and collect results
             for runner in runners {
+                if runner.times_real.is_empty() {
+                    if self.options.output_style != OutputStyleOption::Disabled {
+                        println!(
+                            "{}{}: {} (interrupted before completing any runs)",
+                            "Benchmark ".bold(),
+                            (runner.display_number + 1).to_string().bold(),
+                            runner.command.get_name_with_unused_parameters().cyan()
+                        );
+                    }
+                    continue;
+                }
                 let res = runner.finish(true)?;
                 self.results.push(res);
 
@@ -245,30 +314,34 @@ impl<'a> Scheduler<'a> {
             }
         } else {
             for (number, cmd) in commands_to_run {
-                self.results.push(
-                    Benchmark::new(
-                        number,
-                        number + display_offset,
-                        cmd,
-                        self.options,
-                        &*executor,
-                    )
-                    .run()?,
-                );
+                if crate::util::interrupt::interrupted() {
+                    break;
+                }
+                if let Some(res) = Benchmark::new(
+                    number,
+                    number + display_offset,
+                    cmd,
+                    self.options,
+                    &*executor,
+                )
+                .run()?
+                {
+                    self.results.push(res);
 
-                // We export results after each individual benchmark, because
-                // we would risk losing them if a later benchmark fails.
-                let intermediate_results: Vec<_> = if self.options.filter_failed {
-                    self.results
-                        .iter()
-                        .filter(|r| !r.has_failure())
-                        .cloned()
-                        .collect()
-                } else {
-                    self.results.clone()
-                };
-                self.export_manager
-                    .write_results(&intermediate_results, true)?;
+                    // We export results after each individual benchmark, because
+                    // we would risk losing them if a later benchmark fails.
+                    let intermediate_results: Vec<_> = if self.options.filter_failed {
+                        self.results
+                            .iter()
+                            .filter(|r| !r.has_failure())
+                            .cloned()
+                            .collect()
+                    } else {
+                        self.results.clone()
+                    };
+                    self.export_manager
+                        .write_results(&intermediate_results, true)?;
+                }
             }
         }
 
@@ -303,6 +376,26 @@ impl<'a> Scheduler<'a> {
             .map(|position| &results_slice[position])
             .unwrap_or_else(|| relative_speed::fastest_of(&results_slice));
 
+        let interrupted = crate::util::interrupt::interrupted();
+        let total_live_commands =
+            self.options.reference_command.iter().count() + self.commands.iter().count();
+        let unbenchmarked = total_live_commands.saturating_sub(self.results.len());
+
+        let summary_title = if interrupted {
+            if unbenchmarked > 0 {
+                let plural = if unbenchmarked == 1 {
+                    "command"
+                } else {
+                    "commands"
+                };
+                format!("Summary (interrupted — {unbenchmarked} {plural} not benchmarked)")
+            } else {
+                "Summary (interrupted)".to_string()
+            }
+        } else {
+            "Summary".to_string()
+        };
+
         if let Some(annotated_results) = relative_speed::compute_with_check_from_reference(
             &results_slice,
             reference,
@@ -310,7 +403,7 @@ impl<'a> Scheduler<'a> {
         ) {
             match self.options.sort_order_speed_comparison {
                 SortOrder::MeanTime => {
-                    println!("{}", "Summary".bold());
+                    println!("{}", summary_title.bold());
 
                     let reference = annotated_results.iter().find(|r| r.is_reference).unwrap();
                     let others = annotated_results.iter().filter(|r| !r.is_reference);
@@ -401,14 +494,34 @@ impl<'a> Scheduler<'a> {
                         None
                     };
 
+                    let interrupted_suffix = if interrupted {
+                        if unbenchmarked > 0 {
+                            let plural = if unbenchmarked == 1 {
+                                "command"
+                            } else {
+                                "commands"
+                            };
+                            format!(" (interrupted — {unbenchmarked} {plural} not benchmarked)")
+                        } else {
+                            " (interrupted)".to_string()
+                        }
+                    } else {
+                        String::new()
+                    };
+
                     if let Some(ref_cmd) = reference_command {
                         println!(
-                            "{} (reference: {})",
+                            "{} (reference: {}){}",
                             "Relative speed comparison".bold(),
-                            ref_cmd.cyan()
+                            ref_cmd.cyan(),
+                            interrupted_suffix
                         );
                     } else {
-                        println!("{}", "Relative speed comparison".bold());
+                        println!(
+                            "{}{}",
+                            "Relative speed comparison".bold(),
+                            interrupted_suffix
+                        );
                     }
 
                     let max_cmd_len = annotated_results

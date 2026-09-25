@@ -163,6 +163,7 @@ fn test_csv() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("command_b"),
@@ -195,6 +196,7 @@ fn test_csv() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -248,6 +250,7 @@ fn test_csv_formula_injection_sanitization() {
         percentiles: None,
         geometric_mean: None,
         warmup_runs: None,
+        runs_planned: None,
     }];
 
     let actual = String::from_utf8(
@@ -330,6 +333,7 @@ fn test_csv_with_reference_command() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("param_cmd"),
@@ -361,6 +365,7 @@ fn test_csv_with_reference_command() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
@@ -414,6 +419,7 @@ fn test_csv_heterogeneous_parameters() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
         BenchmarkResult {
             command: String::from("cmd_b"),
@@ -445,6 +451,7 @@ fn test_csv_heterogeneous_parameters() {
             percentiles: None,
             geometric_mean: None,
             warmup_runs: None,
+            runs_planned: None,
         },
     ];
 
