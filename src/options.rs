@@ -252,6 +252,13 @@ impl Default for ExecutorKind {
     }
 }
 
+/// Settings for stopping a benchmark run upon readiness output (`--until`)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UntilSettings {
+    pub pattern: Vec<u8>,
+    pub match_stderr: bool,
+}
+
 /// The main settings for a hyperfine benchmark session
 pub struct Options {
     /// Upper and lower bound for the number of benchmark runs
@@ -365,6 +372,9 @@ pub struct Options {
 
     /// Kill a benchmark run that exceeds this duration (--timeout)
     pub timeout: Option<std::time::Duration>,
+
+    /// `--until`: stop timer upon readiness output pattern
+    pub until: Option<UntilSettings>,
 }
 
 impl Default for Options {
@@ -406,6 +416,7 @@ impl Default for Options {
             subtract_command: None,
             allow_setup_with_round_robin: false,
             timeout: None,
+            until: None,
         }
     }
 }
@@ -640,6 +651,15 @@ impl Options {
                 crate::util::units::parse_duration(val)
                     .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
             );
+        }
+        if let Some(val) = matches.get_one::<String>("until") {
+            if val.is_empty() {
+                return Err(OptionsError::EmptyUntilPattern);
+            }
+            options.until = Some(UntilSettings {
+                pattern: val.as_bytes().to_vec(),
+                match_stderr: matches.get_flag("until-stderr"),
+            });
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {
