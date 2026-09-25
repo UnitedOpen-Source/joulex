@@ -229,10 +229,10 @@ impl<'a> Scheduler<'a> {
                 }
             };
             for r in &mut runners {
-                r.count = common;
+                r.count = common + r.extra_runs();
             }
 
-            let max_count = common;
+            let max_count = runners.iter().map(|r| r.count).max().unwrap_or(common);
             let total_remaining_runs: u64 = runners.iter().map(|r| r.count.saturating_sub(1)).sum();
 
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled
