@@ -143,7 +143,7 @@ fn linux_checks(root: &Path, cpus: usize) -> Vec<Check> {
     }
 
     if let Some(load) = read(root, "/proc/loadavg").and_then(|l| parse_loadavg(&l)) {
-        checks.push(load_check(load, cpus));
+        checks.push(load_check(load, cpus, LINUX_LOAD_PER_CPU));
     }
 
     let supplies: Vec<(String, String)> = entries(root, "/sys/class/power_supply", "")
@@ -228,9 +228,17 @@ fn parse_loadavg(line: &str) -> Option<f64> {
     line.split_whitespace().next()?.parse().ok()
 }
 
+/// Linux: the load average counts runnable (and uninterruptible) tasks, so a
+/// quiet machine is close to 0.
+const LINUX_LOAD_PER_CPU: f64 = 0.1;
+/// macOS: the load average also counts many briefly waiting threads and sits
+/// around 2–6 on an ordinary idle desktop (#188), so allow more.
+#[cfg_attr(not(any(target_os = "macos", test)), allow(dead_code))]
+const MACOS_LOAD_PER_CPU: f64 = 0.5;
+
 /// Other processes that keep CPUs busy compete with the benchmark.
-fn load_check(load: f64, cpus: usize) -> Check {
-    let limit = (0.1 * cpus as f64).max(1.0);
+fn load_check(load: f64, cpus: usize, per_cpu: f64) -> Check {
+    let limit = (per_cpu * cpus as f64).max(1.0);
     Check::new(
         "Load average",
         if load < limit {
@@ -293,7 +301,7 @@ fn macos_checks(cpus: usize) -> Vec<Check> {
     let mut loads = [0.0f64; 3];
     // SAFETY: `loads` has room for the 3 values requested.
     if unsafe { libc::getloadavg(loads.as_mut_ptr(), 3) } >= 1 {
-        checks.push(load_check(loads[0], cpus));
+        checks.push(load_check(loads[0], cpus, MACOS_LOAD_PER_CPU));
     }
 
     let pmset = |args: &[&str]| {
@@ -395,11 +403,20 @@ mod tests {
     fn load() {
         assert_eq!(parse_loadavg("0.21 0.30 0.25 1/345 6789"), Some(0.21));
         assert_eq!(parse_loadavg(""), None);
-        assert_eq!(load_check(0.21, 8).status, Status::Ok);
-        assert_eq!(load_check(0.9, 2).status, Status::Ok); // below 1.0
-        assert_eq!(load_check(3.5, 8).status, Status::Warn);
-        assert_eq!(load_check(3.5, 64).status, Status::Ok); // below 6.4
-        assert_eq!(load_check(0.21, 8).detail, "0.21 (8 CPUs)");
+        let linux = |load, cpus| load_check(load, cpus, LINUX_LOAD_PER_CPU).status;
+        assert_eq!(linux(0.21, 8), Status::Ok);
+        assert_eq!(linux(0.9, 2), Status::Ok); // below 1.0
+        assert_eq!(linux(3.5, 8), Status::Warn);
+        assert_eq!(linux(3.5, 64), Status::Ok); // below 6.4
+        assert_eq!(
+            load_check(0.21, 8, LINUX_LOAD_PER_CPU).detail,
+            "0.21 (8 CPUs)"
+        );
+
+        // An idle macOS desktop (#188): 3.99 on 10 CPUs is fine, 6 is not
+        let macos = |load, cpus| load_check(load, cpus, MACOS_LOAD_PER_CPU).status;
+        assert_eq!(macos(3.99, 10), Status::Ok);
+        assert_eq!(macos(6.0, 10), Status::Warn);
     }
 
     #[test]
