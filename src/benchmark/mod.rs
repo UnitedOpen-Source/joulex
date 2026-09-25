@@ -55,6 +55,8 @@ pub struct BenchmarkRunner<'a> {
     pub exit_codes: Vec<Option<i32>>,
     /// OS resource counters per run (`None` where unavailable, e.g. Windows)
     pub resource_counters: Vec<Option<timing_result::ResourceCounters>>,
+    /// Per-run parameter values of each run, as (name, value) pairs
+    pub per_run_values: Vec<Vec<(String, String)>>,
     pub all_succeeded: bool,
     pub count: u64,
     /// Number of warmup runs performed and, for `--warmup auto`, whether the
@@ -126,6 +128,7 @@ impl<'a> BenchmarkRunner<'a> {
             energy_measurements: vec![],
             exit_codes: vec![],
             resource_counters: vec![],
+            per_run_values: vec![],
             all_succeeded: true,
             count: 0,
             warmup: None,
@@ -372,6 +375,10 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements.push(energy_initial);
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
+        self.per_run_values.push(
+            self.command
+                .per_run_values(&BenchmarkIteration::Benchmark(0)),
+        );
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -399,6 +406,10 @@ impl<'a> BenchmarkRunner<'a> {
         self.energy_measurements.push(energy);
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
+        self.per_run_values.push(
+            self.command
+                .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
+        );
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
@@ -447,6 +458,12 @@ impl<'a> BenchmarkRunner<'a> {
         }
         self.exit_codes = select(&self.exit_codes, keep);
         self.resource_counters = select(&self.resource_counters, keep);
+        if self.per_run_values.len() == run_count {
+            self.per_run_values = keep
+                .iter()
+                .map(|&index| self.per_run_values[index].clone())
+                .collect();
+        }
     }
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
@@ -876,6 +893,9 @@ impl<'a> BenchmarkRunner<'a> {
             let _ = sampler.stop();
         }
 
+        let per_run_parameters =
+            benchmark_result::PerRunParameterValues::new(&self.per_run_values, &self.times_real);
+
         Ok(BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -911,6 +931,7 @@ impl<'a> BenchmarkRunner<'a> {
             runs_planned,
             first_run,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
+            per_run_parameters,
         })
     }
 }

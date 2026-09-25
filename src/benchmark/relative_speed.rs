@@ -205,6 +205,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         runs_planned: None,
         first_run: None,
         diagnostics: None,
+        per_run_parameters: None,
     }
 }
 
