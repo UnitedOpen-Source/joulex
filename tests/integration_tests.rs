@@ -2028,3 +2028,45 @@ fn test_ctrlc_round_robin_interruption() {
     let results = parsed["results"].as_array().unwrap();
     assert!(!results.is_empty());
 }
+
+#[cfg(unix)]
+#[test]
+fn test_ctrlc_unbenchmarked_count_with_imported_json() {
+    use std::process::{Command, Stdio};
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    let tempdir = tempdir().unwrap();
+    let import_path = tempdir.path().join("imported.json");
+    std::fs::write(
+        &import_path,
+        r#"{"results":[{"command":"imported_cmd","mean":1.0,"stddev":0.01,"median":1.0,"user":0.0,"system":0.0,"min":1.0,"max":1.0,"times":[1.0],"exit_codes":[0]}]}"#,
+    ).unwrap();
+
+    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+        .arg("--runs=50")
+        .arg("--shell=none")
+        .arg("--import-json")
+        .arg(&import_path)
+        .arg("sleep 0.1")
+        .arg("sleep 0.1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to spawn joulex");
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    unsafe {
+        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+    }
+
+    let output = child.wait_with_output().expect("failed to wait on child");
+    assert_eq!(output.status.code(), Some(130));
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Summary (interrupted — 1 command not benchmarked)"),
+        "stdout was:\n{stdout}"
+    );
+}

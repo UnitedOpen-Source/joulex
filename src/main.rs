@@ -102,10 +102,13 @@ fn main() {
     match run() {
         Ok(_) => {}
         Err(e) => {
-            if crate::util::interrupt::interrupted() {
+            if e.is::<crate::error::Interrupted>() {
                 std::process::exit(130);
             }
             eprintln!("{} {:#}", colors::red("Error:"), e);
+            if crate::util::interrupt::interrupted() {
+                std::process::exit(130);
+            }
             std::process::exit(1);
         }
     }

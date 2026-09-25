@@ -41,10 +41,16 @@ impl Exporter for JsonExporter {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
         _unit: Option<Unit>,
         _sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
-        let relative = relative_speed::compute_with_check(results, SortOrder::Command);
+        let relative = if results.is_empty() {
+            None
+        } else {
+            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
+            relative_speed::compute_with_check_from_reference(results, baseline, SortOrder::Command)
+        };
         let results = results
             .iter()
             .enumerate()

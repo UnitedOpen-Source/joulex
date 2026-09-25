@@ -122,6 +122,7 @@ impl<T: MarkupExporter> Exporter for T {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
@@ -129,10 +130,11 @@ impl<T: MarkupExporter> Exporter for T {
         let entries = if results.is_empty() {
             Vec::new()
         } else {
-            let fastest = relative_speed::fastest_of(results);
-            relative_speed::compute_with_check(results, sort_order).unwrap_or_else(|| {
-                relative_speed::compute_without_ratios(results, fastest, sort_order)
-            })
+            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
+            relative_speed::compute_with_check_from_reference(results, baseline, sort_order)
+                .unwrap_or_else(|| {
+                    relative_speed::compute_without_ratios(results, baseline, sort_order)
+                })
         };
 
         let table = self.table_results(&entries, unit);

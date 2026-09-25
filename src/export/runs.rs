@@ -96,6 +96,7 @@ impl<M: MarkupExporter> Exporter for RunsExporter<M> {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        _reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         _sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
@@ -132,7 +133,12 @@ mod tests {
     #[test]
     fn markdown_table_with_all_runs() {
         let out = RunsExporter::<MarkdownExporter>::default()
-            .serialize(&[result()], Some(Unit::MilliSecond), SortOrder::Command)
+            .serialize(
+                &[result()],
+                None,
+                Some(Unit::MilliSecond),
+                SortOrder::Command,
+            )
             .unwrap();
         insta::assert_snapshot!(String::from_utf8(out).unwrap(), @r"
         ### `sleep 0.1`
@@ -162,7 +168,7 @@ mod tests {
         let mut r = result();
         r.command_with_unused_parameters = "a | b".into();
         let out = RunsExporter::<OrgmodeExporter>::default()
-            .serialize(&[r], Some(Unit::MilliSecond), SortOrder::Command)
+            .serialize(&[r], None, Some(Unit::MilliSecond), SortOrder::Command)
             .unwrap();
         assert!(String::from_utf8(out)
             .unwrap()
@@ -175,7 +181,12 @@ mod tests {
         r.energy_joules = Some(vec![0.5, 0.6, 0.7]);
         let out = String::from_utf8(
             RunsExporter::<MarkdownExporter>::default()
-                .serialize(&[r.clone()], Some(Unit::MilliSecond), SortOrder::Command)
+                .serialize(
+                    &[r.clone()],
+                    None,
+                    Some(Unit::MilliSecond),
+                    SortOrder::Command,
+                )
                 .unwrap(),
         )
         .unwrap();
@@ -184,7 +195,7 @@ mod tests {
         r.energy_joules = Some(vec![0.5]); // incomplete: some samples missing
         let out = String::from_utf8(
             RunsExporter::<MarkdownExporter>::default()
-                .serialize(&[r], Some(Unit::MilliSecond), SortOrder::Command)
+                .serialize(&[r], None, Some(Unit::MilliSecond), SortOrder::Command)
                 .unwrap(),
         )
         .unwrap();
