@@ -285,7 +285,7 @@ impl Executor for RawExecutor<'_> {
         command_failure_action: Option<CmdFailureAction>,
         output_policy: &CommandOutputPolicy,
     ) -> Result<(TimingResult, ExitStatus)> {
-        let command = command.with_iteration(iteration.to_env_var_value());
+        let command = command.for_iteration(&iteration);
         let result = run_command_and_measure_common(
             command.get_command()?,
             iteration,
@@ -361,7 +361,7 @@ impl Executor for ShellExecutor<'_> {
         command_failure_action: Option<CmdFailureAction>,
         output_policy: &CommandOutputPolicy,
     ) -> Result<(TimingResult, ExitStatus)> {
-        let command = command.with_iteration(iteration.to_env_var_value());
+        let command = command.for_iteration(&iteration);
         let on_windows_cmd = cfg!(windows) && *self.shell == Shell::Default("cmd.exe");
         let mut command_builder = self.shell.command();
         command_builder.arg(if on_windows_cmd { "/C" } else { "-c" });
@@ -510,10 +510,11 @@ impl Executor for MockExecutor {
     fn run_command_and_measure(
         &self,
         command: &Command<'_>,
-        _iteration: BenchmarkIteration,
+        iteration: BenchmarkIteration,
         _command_failure_action: Option<CmdFailureAction>,
         _output_policy: &CommandOutputPolicy,
     ) -> Result<(TimingResult, ExitStatus)> {
+        let command = command.for_iteration(&iteration);
         #[cfg(unix)]
         let status = {
             use std::os::unix::process::ExitStatusExt;

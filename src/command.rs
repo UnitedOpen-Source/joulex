@@ -23,6 +23,87 @@ use rust_decimal::Decimal;
 /// `--shell=none`.
 pub const ITERATION_PLACEHOLDER: &str = "iteration";
 
+/// How the values of per-run parameters are chosen for each run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PerRunMode {
+    /// Go through all combinations in order (`--aggregate-parameter-runs`)
+    Cycle,
+    /// Draw a combination at random for every run (`--parameter-sample`). The
+    /// draw depends only on the seed and the run index, so every command sees
+    /// the same values in the same order (a paired comparison).
+    Random { seed: u64 },
+}
+
+/// Parameters that are substituted per run instead of per benchmark.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PerRunParameters<'a> {
+    vars: Vec<(&'a str, Vec<ParameterValue>)>,
+    mode: PerRunMode,
+}
+
+impl<'a> PerRunParameters<'a> {
+    pub fn new(vars: Vec<(&'a str, Vec<ParameterValue>)>, mode: PerRunMode) -> Self {
+        PerRunParameters { vars, mode }
+    }
+
+    /// Number of value combinations
+    pub fn combinations(&self) -> usize {
+        self.vars.iter().map(|(_, values)| values.len()).product()
+    }
+
+    /// The values for one run; none for non-benchmark runs (setup, cleanup).
+    fn values_for(
+        &self,
+        iteration: &crate::benchmark::executor::BenchmarkIteration,
+    ) -> Vec<ParameterNameAndValue<'a>> {
+        use crate::benchmark::executor::BenchmarkIteration;
+        use rand::{rngs::StdRng, Rng, SeedableRng};
+
+        let (index, warmup) = match *iteration {
+            BenchmarkIteration::Benchmark(i) => (i, false),
+            BenchmarkIteration::Warmup(i) => (i, true),
+            BenchmarkIteration::NonBenchmarkRun => return Vec::new(),
+        };
+        match self.mode {
+            PerRunMode::Cycle => {
+                // Mixed-radix digits of the run index; the last variable
+                // changes fastest
+                let mut rest = (index % self.combinations().max(1) as u64) as usize;
+                let mut values: Vec<_> = self
+                    .vars
+                    .iter()
+                    .rev()
+                    .map(|(name, values)| {
+                        let value = values[rest % values.len()].clone();
+                        rest /= values.len();
+                        (*name, value)
+                    })
+                    .collect();
+                values.reverse();
+                values
+            }
+            PerRunMode::Random { seed } => {
+                let stream = index.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ u64::from(warmup) << 63;
+                let mut rng = StdRng::seed_from_u64(seed ^ stream);
+                self.vars
+                    .iter()
+                    .map(|(name, values)| (*name, values[rng.gen_range(0..values.len())].clone()))
+                    .collect()
+            }
+        }
+    }
+
+    /// Shown after the command name, e.g. "(sampled from 24 values)"
+    fn description(&self) -> String {
+        match self.mode {
+            PerRunMode::Cycle => {
+                format!("aggregated over {} parameter values", self.combinations())
+            }
+            PerRunMode::Random { .. } => format!("sampled from {} values", self.combinations()),
+        }
+    }
+}
+
 /// A command that should be benchmarked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Command<'a> {
@@ -41,6 +122,10 @@ pub struct Command<'a> {
 
     /// Zero or more parameter values.
     parameters: Vec<ParameterNameAndValue<'a>>,
+
+    /// Parameters substituted per run (`--parameter-sample`,
+    /// `--aggregate-parameter-runs`)
+    per_run: Vec<PerRunParameters<'a>>,
 }
 
 impl<'a> Command<'a> {
@@ -58,6 +143,7 @@ impl<'a> Command<'a> {
             expression: Cow::Borrowed(expression),
             argv: None,
             parameters: parameters.into_iter().collect(),
+            per_run: Vec::new(),
         }
     }
 
@@ -72,6 +158,7 @@ impl<'a> Command<'a> {
             expression: Cow::Owned(shell_words::join(&argv)),
             argv: Some(argv),
             parameters: parameters.into_iter().collect(),
+            per_run: Vec::new(),
         }
     }
 
@@ -94,8 +181,48 @@ impl<'a> Command<'a> {
         } else {
             format!(" ({parameters})")
         };
+        let per_run: String = self
+            .per_run
+            .iter()
+            .map(|p| format!(" ({})", p.description()))
+            .collect();
 
-        format!("{}{}", self.get_name(), parameters)
+        format!("{}{}{}", self.get_name(), parameters, per_run)
+    }
+
+    /// Use the same per-run parameters as `other` (for --prepare/--conclude,
+    /// so that they see the values of the run they belong to).
+    pub fn with_per_run_parameters_of(mut self, other: &Command<'a>) -> Self {
+        self.per_run = other.per_run.clone();
+        self
+    }
+
+    /// With `--aggregate-parameter-runs`, the number of runs must be a
+    /// multiple of this, so that every value is used equally often.
+    pub fn runs_multiple(&self) -> u64 {
+        self.per_run
+            .iter()
+            .filter(|p| p.mode == PerRunMode::Cycle)
+            .map(|p| p.combinations() as u64)
+            .product::<u64>()
+            .max(1)
+    }
+
+    /// This command as it runs in `iteration`: `{iteration}` and the per-run
+    /// parameters are substituted.
+    pub fn for_iteration(
+        &self,
+        iteration: &crate::benchmark::executor::BenchmarkIteration,
+    ) -> std::borrow::Cow<'_, Command<'a>> {
+        let command = self.with_iteration(iteration.to_env_var_value());
+        if self.per_run.is_empty() {
+            return command;
+        }
+        let mut command = command.into_owned();
+        for per_run in &self.per_run {
+            command.parameters.extend(per_run.values_for(iteration));
+        }
+        std::borrow::Cow::Owned(command)
     }
 
     /// Return a copy of this command in which `{iteration}` expands to `value`.
@@ -275,6 +402,93 @@ pub struct Commands<'a>(Vec<Command<'a>>);
 
 impl<'a> Commands<'a> {
     pub fn from_cli_arguments(matches: &'a ArgMatches) -> Result<Commands<'a>> {
+        let has_parameters = ["parameter-scan", "parameter-list", "parameter-file"]
+            .iter()
+            .any(|arg| matches.get_many::<String>(arg).is_some());
+        if matches.get_flag("aggregate-parameter-runs") && !has_parameters {
+            bail!(
+                "'--aggregate-parameter-runs' needs parameters to aggregate over \
+                 ('-L', '-P' or '--parameter-file')"
+            );
+        }
+
+        let mut commands = Self::expand_parameters(matches)?;
+
+        if let Some(args) = matches.get_many::<String>("parameter-sample") {
+            let args: Vec<&str> = args.map(String::as_str).collect();
+            let mut vars = Vec::new();
+            for &[name, list] in args.as_chunks::<2>().0 {
+                let values: Vec<ParameterValue> = tokenize(list)
+                    .into_iter()
+                    .map(ParameterValue::Text)
+                    .collect();
+                if values.is_empty() {
+                    bail!("'--parameter-sample {name}' needs at least one value");
+                }
+                vars.push((name, values));
+            }
+
+            // Names of all other parameters (the first value of each option)
+            let other_names = [
+                ("parameter-scan", 3),
+                ("parameter-list", 2),
+                ("parameter-file", 2),
+            ]
+            .into_iter()
+            .filter_map(|(arg, arity)| {
+                matches
+                    .get_many::<String>(arg)
+                    .map(move |values| values.step_by(arity).map(String::as_str))
+            })
+            .flatten();
+            let all_names: Vec<&str> = vars
+                .iter()
+                .map(|(name, _)| *name)
+                .chain(other_names)
+                .collect();
+            if all_names.contains(&ITERATION_PLACEHOLDER) {
+                bail!("The parameter name '{ITERATION_PLACEHOLDER}' is reserved");
+            }
+            let duplicates = Self::find_duplicates(all_names);
+            if !duplicates.is_empty() {
+                bail!("Duplicate parameter names: {}", duplicates.join(", "));
+            }
+
+            let seed = matches.get_one::<u64>("seed").copied().unwrap_or(0);
+            let per_run = PerRunParameters::new(vars, PerRunMode::Random { seed });
+            for command in &mut commands.0 {
+                command.per_run.push(per_run.clone());
+            }
+        }
+
+        // --setup/--cleanup run once per benchmark, not per run: they can't
+        // use a per-run value (it would be passed on literally as '{name}')
+        let per_run_names: Vec<&str> = commands
+            .0
+            .iter()
+            .flat_map(|c| c.per_run.iter())
+            .flat_map(|p| p.vars.iter().map(|(name, _)| *name))
+            .collect();
+        for option in ["setup", "cleanup"] {
+            for template in matches.get_many::<String>(option).into_iter().flatten() {
+                if let Some(name) = per_run_names
+                    .iter()
+                    .find(|name| template.contains(&format!("{{{name}}}")))
+                {
+                    bail!(
+                        "'--{option}' runs once per benchmark, so it cannot use the per-run \
+                         parameter '{{{name}}}' ('--parameter-sample' / \
+                         '--aggregate-parameter-runs'). Use '--prepare' / '--conclude', which \
+                         run before / after every run with its values."
+                    );
+                }
+            }
+        }
+
+        Ok(commands)
+    }
+
+    fn expand_parameters(matches: &'a ArgMatches) -> Result<Commands<'a>> {
         let command_names = matches.get_many::<String>("command-name");
         let argv = matches
             .get_many::<String>("argv")
@@ -367,6 +581,16 @@ impl<'a> Commands<'a> {
                 if !duplicates.is_empty() {
                     bail!("Duplicate parameter names: {}", duplicates.join(", "));
                 }
+            }
+
+            if matches.get_flag("aggregate-parameter-runs") {
+                return Self::aggregated(
+                    matches,
+                    &command_strings,
+                    &command_names,
+                    param_names_and_values,
+                    make_command,
+                );
             }
 
             let dimensions: Vec<usize> = std::iter::once(command_strings.len())
@@ -478,6 +702,56 @@ impl<'a> Commands<'a> {
             }
             Ok(Self(commands))
         }
+    }
+
+    /// `--aggregate-parameter-runs`: one command per template, whose runs go
+    /// through all parameter combinations in turn.
+    fn aggregated(
+        matches: &ArgMatches,
+        command_strings: &[&'a str],
+        command_names: &[&'a str],
+        params: Vec<(&'a str, Vec<ParameterValue>)>,
+        make_command: impl Fn(Option<&'a str>, &'a str, Vec<ParameterNameAndValue<'a>>) -> Command<'a>,
+    ) -> Result<Commands<'a>> {
+        // Every value is run at least once, so this also bounds the run count
+        let max = matches
+            .get_one::<usize>("max-benchmarks")
+            .copied()
+            .unwrap_or(100_000);
+        let combinations = params
+            .iter()
+            .try_fold(1usize, |acc, (_, values)| acc.checked_mul(values.len()))
+            .filter(|&n| n <= max)
+            .ok_or_else(|| {
+                anyhow!(
+                    "'--aggregate-parameter-runs' would need more than {max} runs per command \
+                     (one per parameter combination). Reduce the ranges, or override with \
+                     --max-benchmarks."
+                )
+            })?;
+        if combinations == 0 {
+            return Ok(Self(Vec::new()));
+        }
+        if command_names.len() > 1 && command_names.len() != command_strings.len() {
+            return Err(OptionsError::UnexpectedCommandNameCount(
+                command_names.len(),
+                command_strings.len(),
+            )
+            .into());
+        }
+
+        let per_run = PerRunParameters::new(params, PerRunMode::Cycle);
+        let commands = command_strings
+            .iter()
+            .enumerate()
+            .map(|(i, template)| {
+                let name = command_names.get(i).or(command_names.first()).copied();
+                let mut command = make_command(name, template, Vec::new());
+                command.per_run.push(per_run.clone());
+                command
+            })
+            .collect();
+        Ok(Self(commands))
     }
 
     /// `--expand-used-parameters`: drop the parameters a command doesn't use and
@@ -1199,4 +1473,109 @@ fn test_split_windows_command_line() {
     assert_eq!(split("\t app \"\"  x "), ["app", "", "x"]);
     assert_eq!(split(""), Vec::<String>::new());
     assert_eq!(split("   "), Vec::<String>::new());
+}
+
+#[cfg(test)]
+mod per_run_tests {
+    use super::*;
+    use crate::benchmark::executor::BenchmarkIteration;
+
+    fn texts(values: &[&str]) -> Vec<ParameterValue> {
+        values
+            .iter()
+            .map(|v| ParameterValue::Text(v.to_string()))
+            .collect()
+    }
+
+    fn line(command: &Command, iteration: BenchmarkIteration) -> String {
+        command.for_iteration(&iteration).get_command_line()
+    }
+
+    #[test]
+    fn cycle_goes_through_all_combinations_in_order() {
+        let per_run = PerRunParameters::new(
+            vec![("a", texts(&["1", "2"])), ("b", texts(&["x", "y", "z"]))],
+            PerRunMode::Cycle,
+        );
+        assert_eq!(per_run.combinations(), 6);
+        let mut command = Command::new(None, "run {a}{b}");
+        command.per_run.push(per_run);
+        let lines: Vec<String> = (0..7)
+            .map(|i| line(&command, BenchmarkIteration::Benchmark(i)))
+            .collect();
+        assert_eq!(
+            lines,
+            ["run 1x", "run 1y", "run 1z", "run 2x", "run 2y", "run 2z", "run 1x"]
+        );
+        assert_eq!(command.runs_multiple(), 6);
+        // Setup/cleanup runs get no per-run values
+        assert_eq!(
+            line(&command, BenchmarkIteration::NonBenchmarkRun),
+            "run {a}{b}"
+        );
+        assert_eq!(
+            command.get_name_with_unused_parameters(),
+            "run {a}{b} (aggregated over 6 parameter values)"
+        );
+    }
+
+    #[test]
+    fn random_draws_are_reproducible_and_paired() {
+        let sample = |seed| {
+            let mut command = Command::new(None, "cmd {f}");
+            command.per_run.push(PerRunParameters::new(
+                vec![("f", texts(&["a", "b", "c", "d"]))],
+                PerRunMode::Random { seed },
+            ));
+            command
+        };
+        let sequence = |command: &Command, warmup: bool| -> Vec<String> {
+            (0..40)
+                .map(|i| {
+                    let iteration = if warmup {
+                        BenchmarkIteration::Warmup(i)
+                    } else {
+                        BenchmarkIteration::Benchmark(i)
+                    };
+                    line(command, iteration)
+                })
+                .collect()
+        };
+        let (first, second) = (sample(0), sample(0));
+        // Same seed: same sequence, for any command (paired comparison)
+        assert_eq!(sequence(&first, false), sequence(&second, false));
+        // Another seed or the warmup stream: a different sequence
+        assert_ne!(sequence(&first, false), sequence(&sample(1), false));
+        assert_ne!(sequence(&first, false), sequence(&first, true));
+        // All values occur
+        for value in ["a", "b", "c", "d"] {
+            let wanted = format!("cmd {value}");
+            assert!(sequence(&first, false).contains(&wanted), "{value}");
+        }
+        // Sampling doesn't force whole cycles
+        assert_eq!(first.runs_multiple(), 1);
+        assert_eq!(
+            first.get_name_with_unused_parameters(),
+            "cmd {f} (sampled from 4 values)"
+        );
+    }
+
+    #[test]
+    fn intermediate_commands_share_the_per_run_values() {
+        let mut command = Command::new(None, "run {f}");
+        command.per_run.push(PerRunParameters::new(
+            vec![("f", texts(&["x", "y", "z"]))],
+            PerRunMode::Random { seed: 3 },
+        ));
+        let prepare = Command::new(None, "prepare {f}").with_per_run_parameters_of(&command);
+        for i in 0..20 {
+            let iteration = BenchmarkIteration::Benchmark(i);
+            let run = line(&command, iteration);
+            let prep = line(&prepare, BenchmarkIteration::Benchmark(i));
+            assert_eq!(
+                run.trim_start_matches("run "),
+                prep.trim_start_matches("prepare ")
+            );
+        }
+    }
 }
