@@ -241,6 +241,14 @@ pub struct Options {
     /// Minimum benchmarking time
     pub min_benchmarking_time: Second,
 
+    /// `--target-precision`: run until the 95% CI of the mean is at most this
+    /// fraction of the mean (0.01 = ±1%)
+    pub target_precision: Option<f64>,
+
+    /// `--max-benchmarking-time`: time budget per command for
+    /// `--target-precision`
+    pub max_benchmarking_time: Second,
+
     /// Whether or not to ignore non-zero exit codes
     pub command_failure_action: CmdFailureAction,
 
@@ -328,6 +336,8 @@ impl Default for Options {
             warmup_auto: false,
             first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
+            target_precision: None,
+            max_benchmarking_time: 60.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
             reference_name: None,
@@ -559,6 +569,22 @@ impl Options {
             options.min_benchmarking_time = time
                 .parse::<f64>()
                 .map_err(|e| OptionsError::FloatParsingError("min-benchmarking-time", e))?;
+        }
+        if let Some(value) = matches.get_one::<String>("target-precision") {
+            let pct = value
+                .trim()
+                .trim_end_matches('%')
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|pct| pct.is_finite() && *pct > 0.0)
+                .ok_or_else(|| OptionsError::InvalidTargetPrecision(value.clone()))?;
+            options.target_precision = Some(pct / 100.0);
+        }
+        if let Some(time) = matches.get_one::<String>("max-benchmarking-time") {
+            options.max_benchmarking_time = time
+                .parse::<f64>()
+                .map_err(|e| OptionsError::FloatParsingError("max-benchmarking-time", e))?;
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {

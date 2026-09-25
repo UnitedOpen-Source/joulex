@@ -67,6 +67,16 @@ pub struct BenchmarkRunner<'a> {
     pub cold_warmup_time: Option<Second>,
 }
 
+/// "1%", "0.5%"
+fn format_percent(fraction: f64) -> String {
+    let pct = fraction * 100.0;
+    if pct == pct.round() {
+        format!("{pct:.0}%")
+    } else {
+        format!("{pct}%")
+    }
+}
+
 impl<'a> BenchmarkRunner<'a> {
     pub fn new(
         number: usize,
@@ -283,6 +293,40 @@ impl<'a> BenchmarkRunner<'a> {
             FirstRunPolicy::Separate => !self.has_warmup(),
             FirstRunPolicy::Discard => true,
         }
+    }
+
+    /// The run times that count for `--target-precision`: without a first run
+    /// that `--first-run` excludes.
+    fn measured_times(&self) -> &[Second] {
+        if self.excludes_first_timing_run() && self.times_real.len() > 1 {
+            &self.times_real[1..]
+        } else {
+            &self.times_real
+        }
+    }
+
+    /// `--target-precision`: whether another run is needed. The runs stop
+    /// once the 95% CI of the mean is narrow enough, but never before
+    /// `--min-runs` (at least 2) or in the middle of a cycle of
+    /// `--aggregate-parameter-runs`, and never after `--max-runs` or when
+    /// `budget` seconds have passed since `started`.
+    pub fn needs_more_runs(&self, started: std::time::Instant, budget: Second) -> bool {
+        let Some(target) = self.options.target_precision else {
+            return false;
+        };
+        let runs = self.measured_times().len() as u64;
+        if self.options.run_bounds.max.is_some_and(|max| runs >= max) {
+            return false;
+        }
+        let whole_cycles = runs.is_multiple_of(self.command.runs_multiple());
+        if runs < self.options.run_bounds.min.max(2) || !whole_cycles {
+            return true;
+        }
+        if started.elapsed().as_secs_f64() >= budget {
+            return false;
+        }
+        crate::stats::precision::relative_ci_half_width(self.measured_times())
+            .is_none_or(|width| width > target)
     }
 
     /// `--aggregate-parameter-runs`: round the run count up to whole cycles
@@ -533,6 +577,20 @@ impl<'a> BenchmarkRunner<'a> {
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let mut excluded = Vec::new();
+        // --target-precision: the precision reached (and the target)
+        let precision_reached = self.options.target_precision.map(|target| {
+            (
+                target,
+                crate::stats::precision::relative_ci_half_width(&self.times_real),
+            )
+        });
+        if let Some((target, reached)) = precision_reached {
+            excluded.push(format!(
+                "±{} @95%, target {}",
+                reached.map_or("?".to_string(), |r| format!("{:.1}%", r * 100.0)),
+                format_percent(target)
+            ));
+        }
         if first_run_excluded {
             excluded.push(match self.options.first_run {
                 FirstRunPolicy::Discard => "first run discarded".to_string(),
@@ -823,6 +881,15 @@ impl<'a> BenchmarkRunner<'a> {
                 runs: warmup.runs,
                 spread: warmup.spread,
             });
+        }
+        if let Some((target, reached)) = precision_reached {
+            if reached.is_none_or(|r| r > target) {
+                warnings.push(Warnings::TargetPrecisionNotReached {
+                    target,
+                    reached,
+                    runs: self.times_real.len(),
+                });
+            }
         }
         if too_many_outliers {
             warnings.push(Warnings::TooManyOutliers {
@@ -1170,8 +1237,25 @@ impl<'a> Benchmark<'a> {
             bar.inc(1)
         }
 
-        // Gather statistics (perform the actual benchmark)
-        for i in 0..count_remaining {
+        // Gather statistics (perform the actual benchmark). With
+        // --target-precision, the runs continue until the mean is precise
+        // enough instead of stopping after the planned count.
+        let adaptive = self.options.target_precision.is_some();
+        let started = std::time::Instant::now();
+        let mut i = 0;
+        loop {
+            if adaptive {
+                if !runner.needs_more_runs(started, self.options.max_benchmarking_time) {
+                    break;
+                }
+                if let Some(bar) = progress_bar.as_ref() {
+                    if bar.position() >= bar.length().unwrap_or(0) {
+                        bar.inc_length(1);
+                    }
+                }
+            } else if i >= count_remaining {
+                break;
+            }
             if crate::util::interrupt::interrupted() {
                 break;
             }
@@ -1199,6 +1283,7 @@ impl<'a> Benchmark<'a> {
                     return Err(e);
                 }
             }
+            i += 1;
         }
 
         if let Some(bar) = progress_bar.as_ref() {

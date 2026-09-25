@@ -480,6 +480,27 @@ pub fn build_command() -> Command {
             ),
         )
         .arg(
+            Arg::new("target-precision")
+                .long("target-precision")
+                .action(ArgAction::Set)
+                .value_name("PCT")
+                .conflicts_with("runs")
+                .help("Instead of a fixed number of runs, keep running each command until the \
+                       95% confidence interval of its mean is at most PCT of the mean (e.g. \
+                       '1%'), within '--min-runs' / '--max-runs' and '--max-benchmarking-time'. \
+                       Low-noise commands then finish early and noisy ones get more runs."),
+        )
+        .arg(
+            Arg::new("max-benchmarking-time")
+                .long("max-benchmarking-time")
+                .action(ArgAction::Set)
+                .value_name("SECONDS")
+                .requires("target-precision")
+                .help("Time budget per command for '--target-precision' (default: 60). If \
+                       the target is not reached within it, a warning shows the precision \
+                       that was reached."),
+        )
+        .arg(
             Arg::new("precision")
                 .long("precision")
                 .action(ArgAction::Set)

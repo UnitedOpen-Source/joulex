@@ -33,6 +33,12 @@ pub enum Warnings {
     Multimodal(f64),
     /// Outliers cause most of the variance: fraction, number of outliers
     InflatedVariance(f64, usize),
+    /// `--target-precision` not reached within the budget or `--max-runs`
+    TargetPrecisionNotReached {
+        target: f64,
+        reached: Option<f64>,
+        runs: usize,
+    },
 }
 
 impl fmt::Display for Warnings {
@@ -138,6 +144,18 @@ impl fmt::Display for Warnings {
                  '--export-markdown-runs'). Common causes are caching effects, CPU frequency \
                  changes, P-/E-core migration, or a background job that starts mid-benchmark.",
                 crate::stats::diagnostics::BIMODALITY_THRESHOLD
+            ),
+            Warnings::TargetPrecisionNotReached {
+                target,
+                reached,
+                runs,
+            } => write!(
+                f,
+                "The target precision of ±{:.1}% was not reached after {runs} runs (reached: {}). \
+                 Increase '--max-benchmarking-time' or '--max-runs', or reduce the noise \
+                 (see '--check-system').",
+                target * 100.0,
+                reached.map_or("unknown".to_string(), |r| format!("±{:.1}%", r * 100.0)),
             ),
             Warnings::InflatedVariance(fraction, count) => write!(
                 f,
