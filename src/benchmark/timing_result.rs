@@ -64,6 +64,9 @@ pub struct TimingResult {
 
     /// OS resource counters (None on Windows and for mocked runs)
     pub counters: Option<ResourceCounters>,
+
+    /// Whether this run timed out
+    pub timed_out: bool,
 }
 
 #[test]

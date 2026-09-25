@@ -69,6 +69,8 @@ struct ProcessSettings<'a> {
     affinity: Option<&'a [usize]>,
     /// --priority
     priority: Priority,
+    /// --timeout
+    timeout: Option<std::time::Duration>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -76,6 +78,7 @@ impl<'a> ProcessSettings<'a> {
         ProcessSettings {
             affinity: options.affinity.as_deref(),
             priority: options.priority,
+            timeout: options.timeout,
         }
     }
 }
@@ -89,7 +92,11 @@ fn run_command_and_measure_common(
     command_name: &str,
     process: ProcessSettings,
 ) -> Result<TimerResult> {
-    let ProcessSettings { affinity, priority } = process;
+    let ProcessSettings {
+        affinity,
+        priority,
+        timeout,
+    } = process;
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
     command.stdin(stdin).stdout(stdout).stderr(stderr);
@@ -114,7 +121,7 @@ fn run_command_and_measure_common(
 
     let interrupted_before = crate::util::interrupt::interrupted();
     let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
-    let result = execute_and_measure(command, affinity, priority, capture)
+    let result = execute_and_measure(command, affinity, priority, capture, timeout)
         .map_err(|error| {
             // A priority that needs privileges fails in the child: explain how
             // to get them
@@ -140,6 +147,12 @@ fn run_command_and_measure_common(
     if !result.status.success() {
         if crate::util::interrupt::interrupted() {
             bail!(crate::error::Interrupted);
+        }
+
+        // If the process was terminated by the timeout watchdog, return Ok(result)
+        // so callers can handle the timeout cleanly without failing as an unhandled error.
+        if result.timed_out {
+            return Ok(result);
         }
 
         use crate::util::exit_code::extract_exit_code;
@@ -310,6 +323,7 @@ impl Executor for RawExecutor<'_> {
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
                 counters: result.counters,
+                timed_out: result.timed_out,
             },
             result.status,
         ))
@@ -407,6 +421,7 @@ impl Executor for ShellExecutor<'_> {
                 memory_usage_byte: result.memory_usage_byte,
                 energy_joules: None,
                 counters: result.counters,
+                timed_out: result.timed_out,
             },
             result.status,
         ))
@@ -474,6 +489,7 @@ impl Executor for ShellExecutor<'_> {
             memory_usage_byte: 0,
             energy_joules: None,
             counters: None,
+            timed_out: false,
         });
 
         Ok(())
@@ -492,11 +508,12 @@ impl Executor for ShellExecutor<'_> {
 #[derive(Clone)]
 pub struct MockExecutor {
     shell: Option<String>,
+    timeout: Option<std::time::Duration>,
 }
 
 impl MockExecutor {
-    pub fn new(shell: Option<String>) -> Self {
-        MockExecutor { shell }
+    pub fn new(shell: Option<String>, timeout: Option<std::time::Duration>) -> Self {
+        MockExecutor { shell, timeout }
     }
 
     /// `--debug-mode` doesn't run anything: it only understands commands of
@@ -537,14 +554,23 @@ impl Executor for MockExecutor {
             ExitStatus::from_raw(0)
         };
 
+        let requested = Self::extract_time(command.get_command_line())?;
+        let timed_out = self.timeout.is_some_and(|t| requested > t.as_secs_f64());
+        let time_real = if timed_out {
+            self.timeout.unwrap().as_secs_f64()
+        } else {
+            requested
+        };
+
         Ok((
             TimingResult {
-                time_real: Self::extract_time(command.get_command_line())?,
+                time_real,
                 time_user: 0.0,
                 time_system: 0.0,
                 memory_usage_byte: 0,
                 energy_joules: None,
                 counters: None,
+                timed_out,
             },
             status,
         ))

@@ -149,6 +149,10 @@ impl CPUTimer {
             (0.0, 0.0, 0)
         }
     }
+
+    pub fn raw_job_handle(&self) -> HANDLE {
+        self.job_object
+    }
 }
 
 impl Drop for CPUTimer {

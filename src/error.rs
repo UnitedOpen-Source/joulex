@@ -74,6 +74,8 @@ pub enum OptionsError<'a> {
     InvalidPriority(String),
     #[error("Invalid '--target-precision' '{0}': expected a positive percentage such as '1%'")]
     InvalidTargetPrecision(String),
+    #[error("Invalid duration '{0}' for '--timeout': {1}")]
+    InvalidTimeout(String, String),
 }
 
 #[derive(Debug, Error)]

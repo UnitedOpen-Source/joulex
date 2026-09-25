@@ -362,6 +362,9 @@ pub struct Options {
 
     /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
     pub allow_setup_with_round_robin: bool,
+
+    /// Kill a benchmark run that exceeds this duration (--timeout)
+    pub timeout: Option<std::time::Duration>,
 }
 
 impl Default for Options {
@@ -402,6 +405,7 @@ impl Default for Options {
             priority: crate::util::priority::Priority::default(),
             subtract_command: None,
             allow_setup_with_round_robin: false,
+            timeout: None,
         }
     }
 }
@@ -630,6 +634,12 @@ impl Options {
             options.max_benchmarking_time = time
                 .parse::<f64>()
                 .map_err(|e| OptionsError::FloatParsingError("max-benchmarking-time", e))?;
+        }
+        if let Some(val) = matches.get_one::<String>("timeout") {
+            options.timeout = Some(
+                crate::util::units::parse_duration(val)
+                    .map_err(|e| OptionsError::InvalidTimeout(val.clone(), e))?,
+            );
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {
