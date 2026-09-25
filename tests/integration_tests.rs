@@ -1858,6 +1858,73 @@ fn deep_stats_terminal_output_respects_time_unit_and_shows_stddev() {
 
 #[cfg(unix)]
 #[test]
+fn export_to_dev_stdout_and_dev_null_works() {
+    // Regression test: the atomic write-and-rename of exports must not be used
+    // for devices (renaming into /dev is not permitted).
+    hyperfine()
+        .args([
+            "--runs=1",
+            "--style=none",
+            "--export-csv=/dev/stdout",
+            "echo",
+            "true",
+        ])
+        .assert()
+        .success()
+        // written once, by the final export (not after every benchmark)
+        .stdout(predicate::str::contains("command,mean,stddev").count(1));
+
+    hyperfine()
+        .args([
+            "--runs=1",
+            "--style=none",
+            "--export-json=/dev/null",
+            "echo",
+        ])
+        .assert()
+        .success();
+}
+
+#[cfg(unix)]
+#[test]
+fn export_to_a_fifo_works() {
+    use std::io::Read;
+
+    let dir = tempfile::tempdir().unwrap();
+    let fifo = dir.path().join("results.fifo");
+    let status = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let reader = {
+        let fifo = fifo.clone();
+        std::thread::spawn(move || {
+            let mut content = String::new();
+            std::fs::File::open(fifo)
+                .unwrap()
+                .read_to_string(&mut content)
+                .unwrap();
+            content
+        })
+    };
+
+    hyperfine()
+        .args(["--runs=1", "--style=none", "--export-json"])
+        .arg(&fifo)
+        .arg("echo")
+        .assert()
+        .success();
+
+    assert!(reader.join().unwrap().contains("\"results\""));
+    // the FIFO itself is still there (not replaced by a regular file)
+    use std::os::unix::fs::FileTypeExt;
+    assert!(std::fs::metadata(&fifo).unwrap().file_type().is_fifo());
+}
+
+#[cfg(unix)]
+#[test]
 fn test_ctrlc_interruption_recovers_timing_and_exports() {
     use std::process::{Command, Stdio};
     use std::time::Duration;

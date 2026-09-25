@@ -469,10 +469,15 @@ impl Options {
             None | Some("auto") => (SortOrder::MeanTime, SortOrder::Command),
             Some("command") => (SortOrder::Command, SortOrder::Command),
             Some("mean-time") => (SortOrder::MeanTime, SortOrder::MeanTime),
-            Some(_) => unreachable!("Unknown sort order"),
+            // clap only accepts the values above; treat anything else like "auto"
+            Some(_) => (SortOrder::MeanTime, SortOrder::Command),
         };
 
-        options.executor_kind = if matches.get_flag("no-shell") {
+        // A command given after `--` is an argument vector and always runs
+        // without a shell (`--shell` conflicts with it at the CLI level).
+        options.executor_kind = if matches.get_flag("no-shell")
+            || (matches.contains_id("argv") && !matches.get_flag("debug-mode"))
+        {
             ExecutorKind::Raw
         } else {
             match (

@@ -55,10 +55,25 @@ pub fn build_command() -> Command {
                        The latter is only available if the shell is not explicitly disabled via \
                        '--shell=none'. If multiple commands are given, joulex will show a \
                        comparison of the respective runtimes.")
-                .required_unless_present_any(["generate-completions", "import-json"])
+                .required_unless_present_any(["generate-completions", "import-json", "argv"])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("argv")
+                .last(true)
+                .num_args(1..)
+                .allow_hyphen_values(true)
+                .action(ArgAction::Set)
+                .value_name("PROGRAM [ARGS]")
+                .value_hint(ValueHint::CommandWithArguments)
+                .conflicts_with_all(["command", "shell"])
+                .help("A single command to benchmark, given as an argument vector after '--'. \
+                       It is executed exactly as given: without a shell (like '--shell=none') \
+                       and without re-splitting or unquoting, so no extra quoting is needed. \
+                       Parameters ('{name}') are substituted in each argument separately.\n\n\
+                       Example:  joulex -w 3 -- grep -E 'a|b' \"my file.txt\"\n"),
         )
         .arg(
             Arg::new("import-json")
@@ -277,6 +292,16 @@ pub fn build_command() -> Command {
                 .help("Maximum allowed total number of benchmark combinations when using parameters (default: 100000)."),
         )
         .arg(
+            Arg::new("expand-used-parameters")
+                .long("expand-used-parameters")
+                .action(ArgAction::SetTrue)
+                .help("Only combine each command with the parameters it actually uses, instead of \
+                       with all parameters. A parameter is used if '{NAME}' appears in the command, \
+                       its --command-name, or any --prepare/--conclude/--setup/--cleanup command. \
+                       Example: with '-L a 1,2 -L b x,y', the command 'foo' is benchmarked once \
+                       instead of 4 times, and 'bar {a}' twice."),
+        )
+        .arg(
             Arg::new("shell")
                 .long("shell")
                 .short('S')
@@ -415,6 +440,7 @@ pub fn build_command() -> Command {
                      .md       Markdown table.\n\
                      .adoc     AsciiDoc table.\n\
                      .org      Org-mode table.\n\
+                     .html     Self-contained HTML report with plots.\n\
                      \n\
                      Notes:\n\
                      - Repeat --export to generate multiple formats.\n\
@@ -476,6 +502,17 @@ pub fn build_command() -> Command {
                 .value_name("FILE")
                 .value_hint(ValueHint::FilePath)
                 .help("Like --export-markdown-runs, but as AsciiDoc tables."),
+        )
+        .arg(
+            Arg::new("export-html")
+                .long("export-html")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Export a self-contained HTML report to the given FILE: summary table, \
+                       histogram with kernel density estimate and run-order plot per command, \
+                       and a box plot comparing all commands. No JavaScript, no external \
+                       assets; light and dark themes. Also chosen by '--export FILE.html'."),
         )
         .arg(
             Arg::new("export-json")

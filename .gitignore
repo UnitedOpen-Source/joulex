@@ -1,3 +1,7 @@
 
 /target/
 **/*.rs.bk
+
+# insta: pending snapshot reviews are local artifacts, never commit them
+*.pending-snap
+*.snap.new

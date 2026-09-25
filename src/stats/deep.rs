@@ -1,5 +1,24 @@
-use criterion_stats::univariate::Sample;
-use criterion_stats::Tails;
+//! Bootstrap confidence intervals and a two-sample bootstrap test for
+//! `--deep-stats`.
+//!
+//! This replaces the unmaintained `criterion-stats` crate (#31) with the same
+//! methods: percentile bootstrap intervals, and a Welch t statistic compared
+//! against its distribution under the null hypothesis, obtained by resampling
+//! the pooled ("mixed") samples. A fixed seed makes the results reproducible:
+//! the same measurements always give the same intervals and p-value.
+
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+
+use crate::stats::basic::{mean, median, standard_deviation};
+use crate::stats::summary::percentile;
+
+/// Number of bootstrap resamples
+const NRESAMPLES: usize = 5000;
+/// Confidence level of the intervals
+const CONFIDENCE_LEVEL: f64 = 0.95;
+/// Seed of the resampling RNG (fixed, for reproducible output)
+const SEED: u64 = 0x6a6f_756c_6578; // "joulex"
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeepStats {
@@ -19,24 +38,62 @@ pub struct ComparisonStats {
     pub is_significant_01: bool,
 }
 
+/// Draw `n` values from `pool` with replacement into `out`.
+fn resample_into(rng: &mut StdRng, pool: &[f64], n: usize, out: &mut Vec<f64>) {
+    out.clear();
+    out.extend((0..n).map(|_| pool[rng.gen_range(0..pool.len())]));
+}
+
+/// Lower and upper bound of the central `CONFIDENCE_LEVEL` interval of a
+/// bootstrap distribution (percentile method).
+fn confidence_interval(mut distribution: Vec<f64>) -> (f64, f64) {
+    distribution.sort_by(f64::total_cmp);
+    let tail = 50.0 * (1.0 - CONFIDENCE_LEVEL);
+    (
+        percentile(&distribution, tail).unwrap_or(f64::NAN),
+        percentile(&distribution, 100.0 - tail).unwrap_or(f64::NAN),
+    )
+}
+
+/// Welch's t statistic (sample variances, n - 1).
+fn welch_t(a: &[f64], b: &[f64]) -> f64 {
+    let (mean_a, mean_b) = (mean(a), mean(b));
+    let var_a = standard_deviation(a, Some(mean_a)).powi(2);
+    let var_b = standard_deviation(b, Some(mean_b)).powi(2);
+    (mean_a - mean_b) / (var_a / a.len() as f64 + var_b / b.len() as f64).sqrt()
+}
+
+/// Two-tailed p-value of `t` in the null distribution (the same definition as
+/// criterion-stats: twice the smaller tail fraction).
+fn two_tailed_p_value(distribution: &[f64], t: f64) -> f64 {
+    let n = distribution.len();
+    let below = distribution.iter().filter(|&&x| x < t).count();
+    below.min(n - below) as f64 / n as f64 * 2.0
+}
+
 /// Compute 95% bootstrap confidence intervals for mean, median, and std_dev
 pub fn compute_deep_stats(data: &[f64]) -> Option<DeepStats> {
     if data.len() < 3 {
         return None;
     }
 
-    let sample = Sample::new(data);
-    let nresamples = 5000;
-    let cl = 0.95;
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let mut resample = Vec::with_capacity(data.len());
+    let mut means = Vec::with_capacity(NRESAMPLES);
+    let mut medians = Vec::with_capacity(NRESAMPLES);
+    let mut std_devs = Vec::with_capacity(NRESAMPLES);
 
-    // Bootstrap distributions for (mean, median, std_dev)
-    let (mean_dist, median_dist, stddev_dist) = sample.bootstrap(nresamples, |s| {
-        (s.mean(), s.percentiles().median(), s.std_dev(None))
-    });
+    for _ in 0..NRESAMPLES {
+        resample_into(&mut rng, data, data.len(), &mut resample);
+        let m = mean(&resample);
+        means.push(m);
+        medians.push(median(&resample));
+        std_devs.push(standard_deviation(&resample, Some(m)));
+    }
 
-    let (mean_ci_lower, mean_ci_upper) = mean_dist.confidence_interval(cl);
-    let (median_ci_lower, median_ci_upper) = median_dist.confidence_interval(cl);
-    let (std_dev_ci_lower, std_dev_ci_upper) = stddev_dist.confidence_interval(cl);
+    let (mean_ci_lower, mean_ci_upper) = confidence_interval(means);
+    let (median_ci_lower, median_ci_upper) = confidence_interval(medians);
+    let (std_dev_ci_lower, std_dev_ci_upper) = confidence_interval(std_devs);
 
     Some(DeepStats {
         mean_ci_lower,
@@ -54,15 +111,11 @@ pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
         return None;
     }
 
-    let sample_a = Sample::new(a);
-    let sample_b = Sample::new(b);
-
-    let t_stat = sample_a.t(sample_b);
+    let t_stat = welch_t(a, b);
     if !t_stat.is_finite() {
         // Zero variance in both samples:
         // If means are equal, the samples are identical -> p = 1.0, no difference
-        let same = (sample_a.mean() - sample_b.mean()).abs()
-            <= f64::EPSILON * sample_a.mean().abs().max(1.0);
+        let same = (mean(a) - mean(b)).abs() <= f64::EPSILON * mean(a).abs().max(1.0);
         return if same {
             Some(ComparisonStats {
                 p_value: 1.0,
@@ -76,12 +129,18 @@ pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
         };
     }
 
-    let nresamples = 5000;
-    let (dist,) =
-        criterion_stats::univariate::mixed::bootstrap(sample_a, sample_b, nresamples, |s1, s2| {
-            (s1.t(s2),)
-        });
-    let p_val = dist.p_value(t_stat, &Tails::Two);
+    // Null distribution of t: resample both groups from the pooled sample.
+    let pooled: Vec<f64> = a.iter().chain(b).copied().collect();
+    let mut rng = StdRng::seed_from_u64(SEED);
+    let (mut resample_a, mut resample_b) = (Vec::new(), Vec::new());
+    let distribution: Vec<f64> = (0..NRESAMPLES)
+        .map(|_| {
+            resample_into(&mut rng, &pooled, a.len(), &mut resample_a);
+            resample_into(&mut rng, &pooled, b.len(), &mut resample_b);
+            welch_t(&resample_a, &resample_b)
+        })
+        .collect();
+    let p_val = two_tailed_p_value(&distribution, t_stat);
 
     if !p_val.is_finite() {
         return None;
@@ -140,5 +199,51 @@ mod tests {
         let sample1 = vec![1.0, 1.0];
         let sample2 = vec![1.0, 1.0];
         assert!(compare_samples(&sample1, &sample2).is_none());
+    }
+
+    #[test]
+    fn test_welch_t_matches_the_textbook_formula() {
+        // means 2 and 5, sample variances 1 and 1, n = 3 each
+        let t = welch_t(&[1.0, 2.0, 3.0], &[4.0, 5.0, 6.0]);
+        assert!((t - (-3.0 / (2.0f64 / 3.0).sqrt())).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_two_tailed_p_value() {
+        let distribution: Vec<f64> = (0..100).map(f64::from).collect();
+        assert_eq!(two_tailed_p_value(&distribution, 50.0), 1.0);
+        assert_eq!(two_tailed_p_value(&distribution, 5.0), 0.1);
+        assert_eq!(two_tailed_p_value(&distribution, 1000.0), 0.0);
+    }
+
+    #[test]
+    fn test_confidence_intervals_contain_the_point_estimates() {
+        let data: Vec<f64> = (0..40).map(|i| 1.0 + f64::from(i % 7) * 0.01).collect();
+        let stats = compute_deep_stats(&data).unwrap();
+        let m = mean(&data);
+        assert!(stats.mean_ci_lower <= m && m <= stats.mean_ci_upper);
+        let md = median(&data);
+        assert!(stats.median_ci_lower <= md && md <= stats.median_ci_upper);
+        let sd = standard_deviation(&data, None);
+        assert!(stats.std_dev_ci_lower <= sd && sd <= stats.std_dev_ci_upper);
+    }
+
+    #[test]
+    fn test_results_are_reproducible() {
+        let data = vec![0.10, 0.11, 0.10, 0.12, 0.09, 0.11, 0.13, 0.10];
+        assert_eq!(compute_deep_stats(&data), compute_deep_stats(&data));
+        let other = vec![0.12, 0.13, 0.11, 0.14, 0.12, 0.13, 0.12, 0.15];
+        assert_eq!(
+            compare_samples(&data, &other),
+            compare_samples(&data, &other)
+        );
+    }
+
+    #[test]
+    fn test_no_significance_for_samples_from_the_same_distribution() {
+        let a = vec![0.100, 0.102, 0.099, 0.101, 0.100, 0.103, 0.098, 0.101];
+        let b = vec![0.101, 0.099, 0.100, 0.102, 0.100, 0.098, 0.101, 0.100];
+        let cmp = compare_samples(&a, &b).unwrap();
+        assert!(!cmp.is_significant_05, "{cmp:?}");
     }
 }

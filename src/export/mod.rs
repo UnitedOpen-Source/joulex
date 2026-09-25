@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 mod asciidoc;
 mod csv;
+mod html;
 mod json;
 mod markdown;
 mod markup;
@@ -16,6 +17,7 @@ mod tests;
 
 use self::asciidoc::AsciidocExporter;
 use self::csv::CsvExporter;
+use self::html::HtmlExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
 use self::metadata::{parse_labels, ExportMetadata};
@@ -55,6 +57,9 @@ pub enum ExportType {
 
     /// One AsciiDoc table per benchmark with every run
     AsciidocRuns,
+
+    /// Self-contained HTML report with plots
+    Html,
 }
 
 /// Interface for different exporters.
@@ -131,6 +136,7 @@ impl ExportManager {
             add_exporter("export-markdown-runs", ExportType::MarkdownRuns)?;
             add_exporter("export-orgmode-runs", ExportType::OrgmodeRuns)?;
             add_exporter("export-asciidoc-runs", ExportType::AsciidocRuns)?;
+            add_exporter("export-html", ExportType::Html)?;
         }
         Ok(export_manager)
     }
@@ -150,6 +156,7 @@ impl ExportManager {
             ExportType::MarkdownRuns => Box::<RunsExporter<MarkdownExporter>>::default(),
             ExportType::OrgmodeRuns => Box::<RunsExporter<OrgmodeExporter>>::default(),
             ExportType::AsciidocRuns => Box::<RunsExporter<AsciidocExporter>>::default(),
+            ExportType::Html => Box::<HtmlExporter>::default(),
         };
 
         self.exporters.push(ExporterWithTarget {
@@ -171,10 +178,12 @@ impl ExportManager {
 
     /// Write the given results to all Exporters. The 'intermediate' flag specifies
     /// whether this is being called while still performing benchmarks, or if this
-    /// is the final call after all benchmarks have been finished. In the former case,
-    /// results are written to all file targets (to always have them up to date, even
-    /// if a benchmark fails). In the latter case, we only print to stdout targets (in
-    /// order not to clutter the output of hyperfine with intermediate results).
+    /// is the final call after all benchmarks have been finished.
+    ///
+    /// Regular files are (re)written on every call, so that they are always up to
+    /// date, even if a later benchmark fails. Stdout targets (`-`) and special
+    /// files such as /dev/stdout or FIFOs are only written by the final call:
+    /// writes to them accumulate instead of replacing each other.
     pub fn write_results(&self, results: &[BenchmarkResult], intermediate: bool) -> Result<()> {
         for e in &self.exporters {
             let content = || {
@@ -184,12 +193,16 @@ impl ExportManager {
 
             match e.target {
                 ExportTarget::File(ref filename) => {
-                    write_to_file(filename, &content()?)?;
+                    if !(intermediate && is_special_file(Path::new(filename))) {
+                        write_to_file(filename, &content()?)?;
+                    }
                 }
                 ExportTarget::Stdout => {
                     if !intermediate {
                         println!();
-                        println!("{}", String::from_utf8(content()?).unwrap());
+                        let content = String::from_utf8(content()?)
+                            .context("Export produced invalid UTF-8")?;
+                        println!("{content}");
                     }
                 }
             }
@@ -215,6 +228,12 @@ fn check_export_target(filename: &str) -> std::io::Result<()> {
     Ok(())
 }
 
+/// True if `path` exists and (after following symlinks) is neither a regular
+/// file nor a directory, e.g. a character device, FIFO or socket.
+fn is_special_file(path: &Path) -> bool {
+    fs::metadata(path).is_ok_and(|m| !m.is_file() && !m.is_dir())
+}
+
 fn parent_dir(path: &Path) -> PathBuf {
     match path.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
@@ -229,6 +248,18 @@ fn parent_dir(path: &Path) -> PathBuf {
 /// target being overwritten.
 fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
     let path = Path::new(filename);
+
+    // Devices, FIFOs and other special files (e.g. /dev/stdout, /dev/null or
+    // a `>(…)` process substitution) can't be replaced by a rename: write to
+    // them directly. Only regular files (or new paths) are replaced atomically.
+    if is_special_file(path) {
+        return OpenOptions::new()
+            .write(true)
+            .open(path)
+            .and_then(|mut file| file.write_all(content))
+            .with_context(|| format!("Failed to export results to '{filename}'"));
+    }
+
     let file_name = path
         .file_name()
         .with_context(|| format!("Invalid export file name '{filename}'"))?;
@@ -266,6 +297,7 @@ fn get_export_type_from_filename(filename: &str) -> ExportType {
         Some("csv") => ExportType::Csv,
         Some("md" | "markdown") => ExportType::Markdown,
         Some("org") => ExportType::Orgmode,
+        Some("html" | "htm") => ExportType::Html,
         _ => ExportType::Json,
     }
 }
