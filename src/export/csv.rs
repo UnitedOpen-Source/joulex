@@ -40,6 +40,7 @@ impl Exporter for CsvExporter {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
         _unit: Option<Unit>,
         _sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
@@ -76,7 +77,12 @@ impl Exporter for CsvExporter {
             writer.write_record(headers)?;
         }
 
-        let relative = relative_speed::compute_with_check(results, SortOrder::Command);
+        let relative = if results.is_empty() {
+            None
+        } else {
+            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
+            relative_speed::compute_with_check_from_reference(results, baseline, SortOrder::Command)
+        };
 
         for (i, res) in results.iter().enumerate() {
             let mut fields = vec![sanitize_csv_value(&res.command)];
@@ -204,7 +210,7 @@ fn test_csv() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
             .unwrap(),
     )
     .unwrap();
@@ -258,7 +264,7 @@ fn test_csv_formula_injection_sanitization() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
             .unwrap(),
     )
     .unwrap();
@@ -376,7 +382,12 @@ fn test_csv_with_reference_command() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .serialize(
+                &results,
+                Some(&results[0]),
+                Some(Unit::Second),
+                SortOrder::Command,
+            )
             .unwrap(),
     )
     .unwrap();
@@ -464,7 +475,7 @@ fn test_csv_heterogeneous_parameters() {
 
     let actual = String::from_utf8(
         exporter
-            .serialize(&results, Some(Unit::Second), SortOrder::Command)
+            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
             .unwrap(),
     )
     .unwrap();

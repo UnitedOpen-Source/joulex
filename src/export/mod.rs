@@ -68,6 +68,7 @@ trait Exporter {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
     ) -> Result<Vec<u8>>;
@@ -184,11 +185,16 @@ impl ExportManager {
     /// date, even if a later benchmark fails. Stdout targets (`-`) and special
     /// files such as /dev/stdout or FIFOs are only written by the final call:
     /// writes to them accumulate instead of replacing each other.
-    pub fn write_results(&self, results: &[BenchmarkResult], intermediate: bool) -> Result<()> {
+    pub fn write_results(
+        &self,
+        results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
+        intermediate: bool,
+    ) -> Result<()> {
         for e in &self.exporters {
             let content = || {
                 e.exporter
-                    .serialize(results, self.time_unit, self.sort_order)
+                    .serialize(results, reference, self.time_unit, self.sort_order)
             };
 
             match e.target {

@@ -22,6 +22,7 @@ pub struct Scheduler<'a> {
     /// Imported results (`--import-json`) come first, so this is not
     /// necessarily 0.
     reference_index: Option<usize>,
+    imported_count: usize,
 }
 
 impl<'a> Scheduler<'a> {
@@ -36,10 +37,12 @@ impl<'a> Scheduler<'a> {
             export_manager,
             results: vec![],
             reference_index: None,
+            imported_count: 0,
         }
     }
 
     pub fn add_imported_results(&mut self, imported: Vec<BenchmarkResult>) {
+        self.imported_count += imported.len();
         for res in imported {
             if self.options.output_style != OutputStyleOption::Disabled {
                 println!(
@@ -310,8 +313,9 @@ impl<'a> Scheduler<'a> {
                 } else {
                     self.results.clone()
                 };
+                let reference = self.get_reference_result(&intermediate_results);
                 self.export_manager
-                    .write_results(&intermediate_results, true)?;
+                    .write_results(&intermediate_results, reference, true)?;
             }
         } else {
             for (number, cmd) in commands_to_run {
@@ -340,13 +344,27 @@ impl<'a> Scheduler<'a> {
                     } else {
                         self.results.clone()
                     };
+                    let reference = self.get_reference_result(&intermediate_results);
                     self.export_manager
-                        .write_results(&intermediate_results, true)?;
+                        .write_results(&intermediate_results, reference, true)?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn get_reference_result<'b>(
+        &self,
+        results_slice: &'b [BenchmarkResult],
+    ) -> Option<&'b BenchmarkResult> {
+        self.reference_index
+            .and_then(|idx| self.results.get(idx))
+            .and_then(|ref_res| {
+                results_slice
+                    .iter()
+                    .find(|r| r.command == ref_res.command && r.parameters == ref_res.parameters)
+            })
     }
 
     pub fn print_relative_speed_comparison(&self) {
@@ -372,15 +390,14 @@ impl<'a> Scheduler<'a> {
         // Use the `--reference` command's result if it is still present,
         // otherwise (no reference, or it was filtered out) the fastest one.
         let reference = self
-            .reference_index
-            .and_then(|index| results.iter().position(|(i, _)| *i == index))
-            .map(|position| &results_slice[position])
+            .get_reference_result(&results_slice)
             .unwrap_or_else(|| relative_speed::fastest_of(&results_slice));
 
         let interrupted = crate::util::interrupt::interrupted();
         let total_live_commands =
             self.options.reference_command.iter().count() + self.commands.iter().count();
-        let unbenchmarked = total_live_commands.saturating_sub(self.results.len());
+        let completed_live_commands = self.results.len().saturating_sub(self.imported_count);
+        let unbenchmarked = total_live_commands.saturating_sub(completed_live_commands);
 
         let summary_title = if interrupted {
             if unbenchmarked > 0 {
@@ -600,7 +617,9 @@ impl<'a> Scheduler<'a> {
         } else {
             self.results.clone()
         };
-        self.export_manager.write_results(&results, false)
+        let reference = self.get_reference_result(&results);
+        self.export_manager
+            .write_results(&results, reference, false)
     }
 }
 

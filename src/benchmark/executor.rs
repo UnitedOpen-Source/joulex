@@ -83,8 +83,15 @@ fn run_command_and_measure_common(
         crate::util::affinity::apply(&mut command, cpus);
     }
 
+    let interrupted_before = crate::util::interrupt::interrupted();
     let result = execute_and_measure(command, affinity)
         .with_context(|| format!("Failed to run command '{command_name}'"))?;
+
+    // If an interruption occurred while running the command, discard the run
+    // regardless of whether the child exited 0 (e.g. child caught SIGINT and exited gracefully).
+    if !interrupted_before && crate::util::interrupt::interrupted() {
+        bail!(crate::error::Interrupted);
+    }
 
     if !result.status.success() {
         if crate::util::interrupt::interrupted() {

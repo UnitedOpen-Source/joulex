@@ -246,14 +246,21 @@ fn boxplot_svg(results: &[&BenchmarkResult], unit: Unit) -> String {
     svg
 }
 
-fn summary_table(results: &[BenchmarkResult], unit: Unit, sort_order: SortOrder) -> String {
-    let entries = relative_speed::compute_with_check(results, sort_order).unwrap_or_else(|| {
-        relative_speed::compute_without_ratios(
-            results,
-            relative_speed::fastest_of(results),
-            sort_order,
-        )
-    });
+fn summary_table(
+    results: &[BenchmarkResult],
+    reference: Option<&BenchmarkResult>,
+    unit: Unit,
+    sort_order: SortOrder,
+) -> String {
+    let entries = if results.is_empty() {
+        Vec::new()
+    } else {
+        let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
+        relative_speed::compute_with_check_from_reference(results, baseline, sort_order)
+            .unwrap_or_else(|| {
+                relative_speed::compute_without_ratios(results, baseline, sort_order)
+            })
+    };
     let mut table = format!(
         "<table><thead><tr><th>Command</th><th>Mean [{0}]</th><th>Min [{0}]</th><th>Max [{0}]</th><th>Relative</th></tr></thead><tbody>",
         unit.short_name()
@@ -289,6 +296,7 @@ impl Exporter for HtmlExporter {
     fn serialize(
         &self,
         results: &[BenchmarkResult],
+        reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
     ) -> Result<Vec<u8>> {
@@ -307,7 +315,7 @@ impl Exporter for HtmlExporter {
         }
 
         html.push_str("<h2>Summary</h2>");
-        html.push_str(&summary_table(results, unit, sort_order));
+        html.push_str(&summary_table(results, reference, unit, sort_order));
 
         let with_times: Vec<&BenchmarkResult> = results
             .iter()
@@ -357,7 +365,7 @@ mod tests {
     fn render(results: &[BenchmarkResult]) -> String {
         String::from_utf8(
             HtmlExporter::default()
-                .serialize(results, Some(Unit::MilliSecond), SortOrder::Command)
+                .serialize(results, None, Some(Unit::MilliSecond), SortOrder::Command)
                 .unwrap(),
         )
         .unwrap()

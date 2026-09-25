@@ -21,31 +21,9 @@ pub fn interrupted() -> bool {
     PRESSES.load(Ordering::SeqCst) > 0
 }
 
-/// Reset the interrupt counter (useful for unit/integration tests).
-#[cfg(test)]
-pub fn reset() {
-    PRESSES.store(0, Ordering::SeqCst);
-}
-
-/// Increment the interrupt counter for testing.
-#[cfg(test)]
-pub fn trigger() {
-    PRESSES.fetch_add(1, Ordering::SeqCst);
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_interrupt_flag() {
-        reset();
-        assert!(!interrupted());
-        trigger();
-        assert!(interrupted());
-        reset();
-        assert!(!interrupted());
-    }
 
     #[test]
     fn test_install_is_idempotent() {

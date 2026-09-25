@@ -85,3 +85,71 @@ fn without_reference_the_fastest_result_is_the_baseline() {
         .success()
         .stdout(predicate::str::contains("Summary\n  sleep 0.1 ran"));
 }
+
+#[test]
+fn reference_is_respected_in_exports() {
+    let dir = tempfile::tempdir().unwrap();
+    let md_path = dir.path().join("out.md");
+    let json_path = dir.path().join("out.json");
+    let csv_path = dir.path().join("out.csv");
+    let html_path = dir.path().join("out.html");
+
+    hyperfine_debug()
+        .arg("--runs=2")
+        .arg("--reference=sleep 0.2")
+        .arg("sleep 0.1")
+        .arg("--export-markdown")
+        .arg(&md_path)
+        .arg("--export-json")
+        .arg(&json_path)
+        .arg("--export-csv")
+        .arg(&csv_path)
+        .arg("--export-html")
+        .arg(&html_path)
+        .assert()
+        .success();
+
+    let md = std::fs::read_to_string(&md_path).unwrap();
+    assert!(md.contains("`sleep 0.2`"));
+    assert!(md.contains("`sleep 0.1`"));
+    for line in md.lines() {
+        if line.contains("`sleep 0.2`") {
+            assert!(
+                line.contains("1.00"),
+                "reference sleep 0.2 should have relative 1.00 in markdown, line: {line}"
+            );
+        } else if line.contains("`sleep 0.1`") {
+            assert!(
+                line.contains("2.00"),
+                "sleep 0.1 should have relative 2.00 in markdown, line: {line}"
+            );
+        }
+    }
+
+    let json_str = std::fs::read_to_string(&json_path).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+    let results = parsed["results"].as_array().unwrap();
+    let ref_entry = results
+        .iter()
+        .find(|r| r["command"] == "sleep 0.2")
+        .unwrap();
+    let fast_entry = results
+        .iter()
+        .find(|r| r["command"] == "sleep 0.1")
+        .unwrap();
+    assert_eq!(ref_entry["relative_speed"], 1.0);
+    assert_eq!(fast_entry["relative_speed"], 2.0);
+
+    let csv_str = std::fs::read_to_string(&csv_path).unwrap();
+    for line in csv_str.lines() {
+        if line.starts_with("sleep 0.2,") {
+            assert!(line.contains(",1,"), "csv reference line: {line}");
+        } else if line.starts_with("sleep 0.1,") {
+            assert!(line.contains(",2,"), "csv fast line: {line}");
+        }
+    }
+
+    let html_str = std::fs::read_to_string(&html_path).unwrap();
+    assert!(html_str.contains("<code>sleep 0.2</code>"));
+    assert!(html_str.contains("<code>sleep 0.1</code>"));
+}
