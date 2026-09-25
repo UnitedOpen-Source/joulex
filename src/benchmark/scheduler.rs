@@ -41,6 +41,11 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// All results so far (imported ones first)
+    pub fn results(&self) -> &[BenchmarkResult] {
+        &self.results
+    }
+
     pub fn add_imported_results(&mut self, imported: Vec<BenchmarkResult>) {
         self.imported_count += imported.len();
         for res in imported {

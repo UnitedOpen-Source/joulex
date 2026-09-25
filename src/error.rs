@@ -78,6 +78,11 @@ pub enum OptionsError<'a> {
 #[error("Benchmark interrupted by user")]
 pub struct Interrupted;
 
+/// `--fail-if-regressed` found a regression (exit code 3)
+#[derive(Debug, Error)]
+#[error("{0} benchmark(s) regressed compared with the baseline ('--fail-if-regressed')")]
+pub struct RegressionDetected(pub usize);
+
 /// `--check-system=strict` found a problem (exit code 4)
 #[derive(Debug, Error)]
 #[error("The system check did not pass ('--check-system=strict'); fix the problems above, or use '--check-system' to only report them")]

@@ -19,6 +19,7 @@ use output::colors;
 pub mod benchmark;
 pub mod cli;
 pub mod command;
+pub mod compare;
 pub mod energy;
 pub mod error;
 pub mod export;
@@ -71,6 +72,16 @@ fn run() -> Result<()> {
         options.sort_order_exports,
     )?;
 
+    // Load the baseline before benchmarking, so that a bad file fails fast
+    let baseline = cli_arguments
+        .get_one::<String>("compare")
+        .map(|path| crate::import::import_json(path).map(|results| (path.as_str(), results)))
+        .transpose()?;
+    let regression_threshold = cli_arguments
+        .get_one::<String>("fail-if-regressed")
+        .map(|value| compare::parse_threshold(value).map_err(anyhow::Error::msg))
+        .transpose()?;
+
     let mut imported_results = vec![];
     if let Some(files) = cli_arguments.get_many::<String>("import-json") {
         for file in files {
@@ -115,6 +126,34 @@ fn run() -> Result<()> {
     scheduler.print_relative_speed_comparison();
     scheduler.final_export()?;
 
+    if let Some((baseline_path, baseline)) = &baseline {
+        let comparison = compare::compare(baseline, scheduler.results());
+        if options.output_style != options::OutputStyleOption::Disabled {
+            crate::outln!(
+                "{}",
+                compare::terminal_table(
+                    &comparison,
+                    baseline_path,
+                    regression_threshold,
+                    options.time_unit
+                )
+            );
+        }
+        if let Some(path) = cli_arguments.get_one::<String>("export-diff-markdown") {
+            std::fs::write(
+                path,
+                compare::markdown_table(&comparison, regression_threshold, options.time_unit),
+            )
+            .map_err(|e| anyhow::anyhow!("Could not write '{path}': {e}"))?;
+        }
+        if let Some(threshold) = regression_threshold {
+            let regressions = comparison.regressions(threshold).count();
+            if regressions > 0 && !crate::util::interrupt::interrupted() {
+                return Err(error::RegressionDetected(regressions).into());
+            }
+        }
+    }
+
     if crate::util::interrupt::interrupted() {
         std::process::exit(130);
     }
@@ -128,6 +167,10 @@ fn main() {
         Err(e) => {
             if e.is::<crate::error::Interrupted>() {
                 std::process::exit(130);
+            }
+            if e.is::<crate::error::RegressionDetected>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(3);
             }
             if e.is::<crate::error::SystemCheckFailed>() {
                 eprintln!("{} {:#}", colors::red("Error:"), e);

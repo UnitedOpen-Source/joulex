@@ -86,6 +86,37 @@ pub fn build_command() -> Command {
                        Example:  joulex --import-json baseline.json 'sleep 1'\n"),
         )
         .arg(
+            Arg::new("compare")
+                .long("compare")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Compare each benchmark with the result of the same command (name) in a \
+                       JSON file exported earlier, e.g. on the main branch, and print a table \
+                       with the relative change and its statistical significance.\n\n\
+                       Example:  joulex --compare baseline.json --fail-if-regressed 5% 'make'\n"),
+        )
+        .arg(
+            Arg::new("fail-if-regressed")
+                .long("fail-if-regressed")
+                .action(ArgAction::Set)
+                .value_name("PCT")
+                .requires("compare")
+                .help("With '--compare': exit with code 3 if any benchmark is slower than its \
+                       baseline by more than PCT (e.g. '5%') and the difference is statistically \
+                       significant (p < 0.05, from the per-run times). Noise alone doesn't fail."),
+        )
+        .arg(
+            Arg::new("export-diff-markdown")
+                .long("export-diff-markdown")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .requires("compare")
+                .help("With '--compare': write the comparison as a Markdown table to FILE, \
+                       e.g. for a pull request comment or a CI job summary."),
+        )
+        .arg(
             Arg::new("warmup")
                 .long("warmup")
                 .short('w')
