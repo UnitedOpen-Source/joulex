@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
@@ -28,8 +29,15 @@ pub struct Command<'a> {
     /// The command name (without parameter substitution)
     name: Option<&'a str>,
 
-    /// The command that should be executed (without parameter substitution)
-    expression: &'a str,
+    /// The command that should be executed (without parameter substitution).
+    /// For a command given as an argument vector, this is its shell-quoted
+    /// form, used for display and for finding the parameters it uses.
+    expression: Cow<'a, str>,
+
+    /// The exact argument vector, for a command given after `--`. It is
+    /// executed as is (with parameters substituted per argument) instead of
+    /// re-splitting `expression`.
+    argv: Option<Vec<&'a str>>,
 
     /// Zero or more parameter values.
     parameters: Vec<ParameterNameAndValue<'a>>,
@@ -37,11 +45,7 @@ pub struct Command<'a> {
 
 impl<'a> Command<'a> {
     pub fn new(name: Option<&'a str>, expression: &'a str) -> Command<'a> {
-        Command {
-            name,
-            expression,
-            parameters: Vec::new(),
-        }
+        Self::new_parametrized(name, expression, Vec::new())
     }
 
     pub fn new_parametrized(
@@ -51,7 +55,22 @@ impl<'a> Command<'a> {
     ) -> Command<'a> {
         Command {
             name,
-            expression,
+            expression: Cow::Borrowed(expression),
+            argv: None,
+            parameters: parameters.into_iter().collect(),
+        }
+    }
+
+    /// A command given as an exact argument vector (after `--`).
+    pub fn from_argv(
+        name: Option<&'a str>,
+        argv: Vec<&'a str>,
+        parameters: impl IntoIterator<Item = ParameterNameAndValue<'a>>,
+    ) -> Command<'a> {
+        Command {
+            name,
+            expression: Cow::Owned(shell_words::join(&argv)),
+            argv: Some(argv),
             parameters: parameters.into_iter().collect(),
         }
     }
@@ -97,14 +116,28 @@ impl<'a> Command<'a> {
     }
 
     pub fn get_command_line(&self) -> String {
-        self.replace_parameters_in(self.expression)
+        match &self.argv {
+            Some(argv) => shell_words::join(self.get_argv(argv)),
+            None => self.replace_parameters_in(&self.expression),
+        }
+    }
+
+    fn get_argv(&self, argv: &[&str]) -> Vec<String> {
+        argv.iter()
+            .map(|arg| self.replace_parameters_in(arg))
+            .collect()
     }
 
     pub fn get_command(&self) -> Result<std::process::Command> {
-        let command_line = self.get_command_line();
-        let mut tokens = shell_words::split(&command_line)
-            .with_context(|| format!("Failed to parse command '{command_line}'"))?
-            .into_iter();
+        let mut tokens = match &self.argv {
+            Some(argv) => self.get_argv(argv),
+            None => {
+                let command_line = self.get_command_line();
+                shell_words::split(&command_line)
+                    .with_context(|| format!("Failed to parse command '{command_line}'"))?
+            }
+        }
+        .into_iter();
 
         if let Some(program_name) = tokens.next() {
             let mut command_builder = std::process::Command::new(program_name);
@@ -159,11 +192,23 @@ pub struct Commands<'a>(Vec<Command<'a>>);
 impl<'a> Commands<'a> {
     pub fn from_cli_arguments(matches: &'a ArgMatches) -> Result<Commands<'a>> {
         let command_names = matches.get_many::<String>("command-name");
-        let command_strings = matches
-            .get_many::<String>("command")
-            .unwrap_or_default()
-            .map(|v| v.as_str())
-            .collect::<Vec<_>>();
+        let argv = matches
+            .get_many::<String>("argv")
+            .map(|args| args.map(String::as_str).collect::<Vec<_>>());
+        // A command after `--` takes the place of the positional commands
+        // (they conflict at the CLI level).
+        let command_strings = match &argv {
+            Some(_) => vec![""],
+            None => matches
+                .get_many::<String>("command")
+                .unwrap_or_default()
+                .map(|v| v.as_str())
+                .collect::<Vec<_>>(),
+        };
+        let make_command = |name, expression, parameters| match &argv {
+            Some(argv) => Command::from_argv(name, argv.clone(), parameters),
+            None => Command::new_parametrized(name, expression, parameters),
+        };
 
         let has_parameters = matches.get_many::<String>("parameter-scan").is_some()
             || matches.get_many::<String>("parameter-list").is_some()
@@ -306,7 +351,7 @@ impl<'a> Commands<'a> {
                     .zip(params_indices)
                     .map(|((name, values), i)| (*name, values[*i].clone()))
                     .collect();
-                commands.push(Command::new_parametrized(
+                commands.push(make_command(
                     name,
                     command_strings[*command_index],
                     parameters,
@@ -345,7 +390,7 @@ impl<'a> Commands<'a> {
 
             let mut commands = Vec::with_capacity(command_strings.len());
             for (i, s) in command_strings.iter().enumerate() {
-                commands.push(Command::new(command_names.get(i).copied(), s));
+                commands.push(make_command(command_names.get(i).copied(), s, Vec::new()));
             }
             Ok(Self(commands))
         }
@@ -366,7 +411,7 @@ impl<'a> Commands<'a> {
         commands
             .into_iter()
             .map(|mut command| {
-                let expression = command.expression;
+                let expression = command.expression.clone();
                 let name = command.name;
                 command.parameters.retain(|(parameter, _)| {
                     let placeholder = format!("{{{parameter}}}");
@@ -380,7 +425,7 @@ impl<'a> Commands<'a> {
             })
             .filter(|command| {
                 let key = (
-                    command.expression,
+                    command.expression.clone(),
                     command.get_name(),
                     command
                         .parameters
@@ -980,4 +1025,64 @@ fn test_iteration_is_a_reserved_parameter_name() {
     let matches = get_cli_arguments(vec!["joulex", "-L", "iteration", "1,2", "echo {iteration}"]);
     let err = Commands::from_cli_arguments(&matches).unwrap_err();
     assert!(err.to_string().contains("is reserved"));
+}
+
+#[test]
+fn test_argv_command_is_executed_exactly() {
+    let cmd = Command::from_argv(
+        None,
+        vec!["printf", "%s\n", "a b", "it's", "$HOME", "\\x"],
+        Vec::new(),
+    );
+    let process = cmd.get_command().unwrap();
+    assert_eq!(process.get_program(), "printf");
+    assert_eq!(
+        process.get_args().collect::<Vec<_>>(),
+        ["%s\n", "a b", "it's", "$HOME", "\\x"]
+    );
+    assert_eq!(
+        cmd.get_command_line(),
+        "printf '%s\n' 'a b' 'it'\\''s' '$HOME' '\\x'"
+    );
+    assert_eq!(cmd.get_name(), cmd.get_command_line());
+}
+
+#[test]
+fn test_argv_command_substitutes_parameters_per_argument() {
+    let cmd = Command::from_argv(
+        None,
+        vec!["make", "-j{n}", "{target}"],
+        vec![
+            ("n", ParameterValue::Text("4".into())),
+            ("target", ParameterValue::Text("a b; echo injected".into())),
+            ("unused", ParameterValue::Text("x".into())),
+        ],
+    );
+    let process = cmd.get_command().unwrap();
+    assert_eq!(
+        process.get_args().collect::<Vec<_>>(),
+        ["-j4", "a b; echo injected"]
+    );
+    assert_eq!(cmd.get_command_line(), "make -j4 'a b; echo injected'");
+    assert_eq!(
+        cmd.get_unused_parameters()
+            .map(|(p, _)| *p)
+            .collect::<Vec<_>>(),
+        ["unused"]
+    );
+}
+
+#[test]
+fn test_argv_from_cli_arguments() {
+    let matches = crate::cli::get_cli_arguments(vec![
+        "joulex", "-L", "n", "1,2", "--", "echo", "x {n}", "--flag",
+    ]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap();
+    let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
+    assert_eq!(lines, ["echo 'x 1' --flag", "echo 'x 2' --flag"]);
+
+    let matches = crate::cli::get_cli_arguments(vec!["joulex", "-n", "name", "--", "true"]);
+    let commands = Commands::from_cli_arguments(&matches).unwrap();
+    let names: Vec<_> = commands.iter().map(|c| c.get_name()).collect();
+    assert_eq!(names, ["name"]);
 }

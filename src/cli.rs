@@ -55,10 +55,25 @@ pub fn build_command() -> Command {
                        The latter is only available if the shell is not explicitly disabled via \
                        '--shell=none'. If multiple commands are given, joulex will show a \
                        comparison of the respective runtimes.")
-                .required_unless_present_any(["generate-completions", "import-json"])
+                .required_unless_present_any(["generate-completions", "import-json", "argv"])
                 .action(ArgAction::Append)
                 .value_hint(ValueHint::CommandString)
                 .value_parser(NonEmptyStringValueParser::new()),
+        )
+        .arg(
+            Arg::new("argv")
+                .last(true)
+                .num_args(1..)
+                .allow_hyphen_values(true)
+                .action(ArgAction::Set)
+                .value_name("PROGRAM [ARGS]")
+                .value_hint(ValueHint::CommandWithArguments)
+                .conflicts_with_all(["command", "shell"])
+                .help("A single command to benchmark, given as an argument vector after '--'. \
+                       It is executed exactly as given: without a shell (like '--shell=none') \
+                       and without re-splitting or unquoting, so no extra quoting is needed. \
+                       Parameters ('{name}') are substituted in each argument separately.\n\n\
+                       Example:  joulex -w 3 -- grep -E 'a|b' \"my file.txt\"\n"),
         )
         .arg(
             Arg::new("import-json")
