@@ -107,7 +107,8 @@ fn run_command_and_measure_common(
     crate::util::priority::apply(&mut command, priority);
 
     let interrupted_before = crate::util::interrupt::interrupted();
-    let result = execute_and_measure(command, affinity, priority)
+    let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
+    let result = execute_and_measure(command, affinity, priority, capture)
         .map_err(|error| {
             // A priority that needs privileges fails in the child: explain how
             // to get them
@@ -159,19 +160,111 @@ fn run_command_and_measure_common(
                 BenchmarkIteration::Benchmark(0) => "the first benchmark run".to_string(),
                 BenchmarkIteration::Benchmark(i) => format!("benchmark iteration {i}"),
             };
-            bail!(
-                "{cause} in {when}. Use the '-i'/'--ignore-exit-code' option if you want to ignore this. \
-                Alternatively, use the '--show-output' option to debug what went wrong.",
-                cause=result.status.code().map_or(
-                    "The process has been terminated by a signal".into(),
-                    |c| format!("Command terminated with non-zero exit code {c}")
-
+            let cause = result
+                .status
+                .code()
+                .map_or("The process has been terminated by a signal".into(), |c| {
+                    format!("Command terminated with non-zero exit code {c}")
+                });
+            match &result.captured {
+                Some(captured) => bail!(
+                    "{cause} in {when}. Use the '-i'/'--ignore-exit-code' option if you want \
+                     to ignore this.\n{}",
+                    format_captured_output(captured)
                 ),
-            );
+                None => bail!(
+                    "{cause} in {when}. Use the '-i'/'--ignore-exit-code' option if you want \
+                     to ignore this. Alternatively, use the '--show-output-on-failure' (or \
+                     '--show-output') option to debug what went wrong."
+                ),
+            }
+        } else if let Some(captured) = &result.captured {
+            warn_failed_run_output(command_name, iteration, captured);
         }
     }
 
     Ok(result)
+}
+
+/// Number of lines of each stream shown for a failed run
+const CAPTURED_LINES: usize = 20;
+/// Longer lines (e.g. binary output) are cut to their last this many
+/// characters (the end of the output is usually the interesting part)
+const CAPTURED_LINE_CHARS: usize = 300;
+/// With '-i', the output of at most this many failed runs is shown
+const MAX_FAILED_RUN_OUTPUTS: usize = 3;
+
+/// The last lines of a captured stream, with control characters escaped
+/// (the output is untrusted and must not control the terminal).
+fn tail_lines(bytes: &[u8]) -> Option<(usize, String)> {
+    let text = String::from_utf8_lossy(bytes);
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.iter().all(|line| line.trim().is_empty()) {
+        return None;
+    }
+    let tail = &lines[lines.len().saturating_sub(CAPTURED_LINES)..];
+    let shown = tail
+        .iter()
+        .map(|line| {
+            let chars = line.chars().count();
+            let cut = chars.saturating_sub(CAPTURED_LINE_CHARS);
+            let line: String = line.chars().skip(cut).collect();
+            let line = crate::util::sanitize::escape_control_chars(&line).into_owned();
+            if cut > 0 {
+                format!("({cut} earlier characters) … {line}")
+            } else {
+                line
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some((tail.len(), shown))
+}
+
+/// The captured stderr and stdout of a failed run, for an error or warning.
+fn format_captured_output(captured: &crate::timer::CapturedOutput) -> String {
+    let mut out = String::new();
+    for (name, bytes) in [("stderr", &captured.stderr), ("stdout", &captured.stdout)] {
+        if let Some((count, lines)) = tail_lines(bytes) {
+            out.push_str(&format!("──── {name} (last {count} lines) ────\n{lines}\n"));
+        }
+    }
+    if out.is_empty() {
+        out.push_str("(the command produced no output)\n");
+    }
+    out
+}
+
+/// '-i' with '--show-output-on-failure': show the output of the first failed
+/// runs as a warning and continue.
+fn warn_failed_run_output(
+    command_name: &str,
+    iteration: BenchmarkIteration,
+    captured: &crate::timer::CapturedOutput,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SHOWN: AtomicUsize = AtomicUsize::new(0);
+
+    match SHOWN.fetch_add(1, Ordering::Relaxed) {
+        shown if shown < MAX_FAILED_RUN_OUTPUTS => {
+            let run = match iteration {
+                BenchmarkIteration::Benchmark(i) => format!("benchmark iteration {i}"),
+                BenchmarkIteration::Warmup(i) => format!("warmup iteration {i}"),
+                BenchmarkIteration::NonBenchmarkRun => "a non-benchmark run".to_string(),
+            };
+            eprintln!(
+                "{} '{}' failed in {run} (ignored):\n{}",
+                crate::output::colors::yellow("Warning:"),
+                crate::util::sanitize::escape_control_chars(command_name),
+                format_captured_output(captured)
+            );
+        }
+        MAX_FAILED_RUN_OUTPUTS => eprintln!(
+            "{} the output of further failed runs is not shown.",
+            crate::output::colors::yellow("Warning:")
+        ),
+        _ => {}
+    }
 }
 
 pub struct RawExecutor<'a> {
@@ -487,4 +580,29 @@ fn test_normalize_relative_command_path_for_cmd() {
     ] {
         assert_eq!(normalize_relative_command_path_for_cmd(input), expected);
     }
+}
+
+#[test]
+fn captured_output_is_tailed_escaped_and_cut() {
+    let many_lines: String = (1..=30).map(|i| format!("line {i}\n")).collect();
+    let (count, text) = tail_lines(many_lines.as_bytes()).unwrap();
+    assert_eq!(count, CAPTURED_LINES);
+    assert!(text.starts_with("line 11\n") && text.ends_with("line 30"));
+
+    let (_, text) = tail_lines(b"\x1b[31mred\x07").unwrap();
+    assert_eq!(text, "\\u{1b}[31mred\\u{7}");
+
+    let (_, text) = tail_lines(&[b'x'; 1000]).unwrap();
+    assert!(text.starts_with("(700 earlier characters) … x"), "{text}");
+    let mut long_line = vec![0u8; 1000];
+    long_line.extend_from_slice(b"the error");
+    let (_, text) = tail_lines(&long_line).unwrap();
+    assert!(text.ends_with("the error"), "{text}");
+
+    assert!(tail_lines(b"").is_none());
+    assert!(tail_lines(b"\n  \n").is_none());
+    assert_eq!(
+        format_captured_output(&crate::timer::CapturedOutput::default()),
+        "(the command produced no output)\n"
+    );
 }

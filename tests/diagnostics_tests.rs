@@ -23,9 +23,11 @@ mod unix {
 
     /// Sleeps 10 ms + 1 ms per run: a clear upward trend
     const RAMP: &str = "sleep $(printf '0.%03d' $((10 + JOULEX_ITERATION)))";
-    /// Alternates between 10 ms and 40 ms: two separated groups
+    /// Alternates between 50 ms and 150 ms: two separated groups. Run with
+    /// '-N' (an explicit 'sh -c'), so that no shell spawning time is
+    /// subtracted: under CPU load, that subtraction is the main noise source.
     const TWO_GROUPS: &str =
-        "if [ $((JOULEX_ITERATION % 2)) = 0 ]; then sleep 0.01; else sleep 0.04; fi";
+        "sh -c 'if [ $((JOULEX_ITERATION % 2)) = 0 ]; then sleep 0.05; else sleep 0.15; fi'";
     /// 10 ms, with a 300 ms run twice in 100 runs. System noise can add a few
     /// small outliers (the MAD of 10 ms sleeps is tiny), so the count isn't
     /// asserted, and 100 runs keep all outliers well below the 10% at which
@@ -55,7 +57,7 @@ mod unix {
     #[test]
     fn two_groups_trigger_the_multimodal_warning() {
         hyperfine()
-            .args(["--runs=40", TWO_GROUPS])
+            .args(["--runs=40", "-N", "--first-run=discard", TWO_GROUPS])
             .assert()
             .success()
             .stderr(predicate::str::contains("looks multimodal"))

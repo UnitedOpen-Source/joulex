@@ -558,6 +558,19 @@ pub fn build_command() -> Command {
                 ),
         )
         .arg(
+            Arg::new("show-output-on-failure")
+                .long("show-output-on-failure")
+                .action(ArgAction::SetTrue)
+                .conflicts_with_all(["show-output", "output"])
+                .help(
+                    "Capture the stdout and stderr of every run (the last 64 KiB of each) and \
+                     print them only if the run fails: in the error message, or as a warning \
+                     with '-i'/'--ignore-failure'. Unlike '--show-output', this works with \
+                     '--style' and doesn't flood the terminal. Reading the output through pipes \
+                     can affect the measurement slightly, like '--output=pipe'.",
+                ),
+        )
+        .arg(
             Arg::new("output")
                 .long("output")
                 .short('O')
