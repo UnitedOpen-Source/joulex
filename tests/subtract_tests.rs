@@ -116,3 +116,62 @@ fn a_failing_baseline_is_an_error() {
             "The '--subtract' baseline 'exit 3' failed",
         ));
 }
+
+#[test]
+fn baseline_records_net_mean_stderr_in_json() {
+    let results = results(&["--runs=3", "--subtract", "sleep 0.05", "sleep 0.2"]);
+    let baseline = &results[0]["baseline"];
+    assert!(baseline.get("net_mean_stderr").is_some());
+    assert!(close(baseline["net_mean_stderr"].as_f64().unwrap(), 0.0));
+}
+
+#[test]
+fn subtract_works_with_target_precision() {
+    let results = results(&[
+        "--min-runs=3",
+        "--target-precision=5%",
+        "--subtract",
+        "sleep 0.05",
+        "sleep 0.2",
+    ]);
+    assert!(close(results[0]["mean"].as_f64().unwrap(), 0.15));
+    assert_eq!(results[0]["precision"]["met"], true);
+    assert!(results[0]["baseline"].get("net_mean_stderr").is_some());
+}
+
+#[test]
+fn subtract_works_with_compare() {
+    let dir = tempfile::tempdir().unwrap();
+    let base_json = dir.path().join("base.json");
+    hyperfine()
+        .args(["--debug-mode", "--style=basic", "--export-json"])
+        .arg(&base_json)
+        .args(["--runs=3", "--subtract", "sleep 0.05", "sleep 0.2"])
+        .assert()
+        .success();
+
+    hyperfine()
+        .args([
+            "--debug-mode",
+            "--style=basic",
+            "--runs=3",
+            "--subtract",
+            "sleep 0.05",
+            "--compare",
+        ])
+        .arg(&base_json)
+        .arg("sleep 0.2")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sleep 0.2"))
+        .stdout(predicate::str::contains("~"));
+}
+
+#[test]
+fn subtract_help_mentions_energy() {
+    hyperfine()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("'--energy' is used"));
+}

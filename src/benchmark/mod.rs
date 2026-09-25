@@ -339,6 +339,14 @@ impl<'a> BenchmarkRunner<'a> {
         res
     }
 
+    /// `--subtract`: subtract the baseline's mean energy from a run (clamped to 0).
+    fn subtract_baseline_energy(&self, energy: Option<f64>) -> Option<f64> {
+        match (energy, self.baseline.as_ref().and_then(|b| b.energy_joules)) {
+            (Some(e), Some(base_e)) => Some((e - base_e).max(0.0)),
+            (e, _) => e,
+        }
+    }
+
     /// The run times that count for `--target-precision`: without a first run
     /// that `--first-run` excludes.
     fn measured_times(&self) -> &[Second] {
@@ -369,8 +377,17 @@ impl<'a> BenchmarkRunner<'a> {
         if started.elapsed().as_secs_f64() >= budget {
             return false;
         }
-        crate::stats::precision::relative_ci_half_width(self.measured_times())
-            .is_none_or(|width| width > target)
+        let (base_sd, base_runs) = self
+            .baseline
+            .as_ref()
+            .map(|b| (b.stddev, b.runs))
+            .unwrap_or((None, 0));
+        crate::stats::precision::relative_ci_half_width_with_baseline(
+            self.measured_times(),
+            base_sd,
+            base_runs,
+        )
+        .is_none_or(|width| width > target)
     }
 
     /// `--aggregate-parameter-runs`: round the run count up to whole cycles
@@ -468,7 +485,8 @@ impl<'a> BenchmarkRunner<'a> {
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
         self.memory_usage_byte.push(res.memory_usage_byte);
-        self.energy_measurements.push(energy_initial);
+        self.energy_measurements
+            .push(self.subtract_baseline_energy(energy_initial));
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
         self.per_run_values.push(
@@ -506,7 +524,8 @@ impl<'a> BenchmarkRunner<'a> {
         self.times_user.push(res.time_user);
         self.times_system.push(res.time_system);
         self.memory_usage_byte.push(res.memory_usage_byte);
-        self.energy_measurements.push(energy);
+        self.energy_measurements
+            .push(self.subtract_baseline_energy(energy));
         self.exit_codes.push(extract_exit_code(status));
         self.resource_counters.push(res.counters);
         self.per_run_values.push(
@@ -633,9 +652,18 @@ impl<'a> BenchmarkRunner<'a> {
                     0.0,
                 )
             } else {
-                let real_mean = mean(&self.times_real);
+                let is_constant = self.times_real.iter().all(|&x| x == self.times_real[0]);
+                let real_mean = if is_constant {
+                    self.times_real[0]
+                } else {
+                    mean(&self.times_real)
+                };
                 let stddev = if self.times_real.len() > 1 {
-                    Some(standard_deviation(&self.times_real, Some(real_mean)))
+                    if is_constant {
+                        Some(0.0)
+                    } else {
+                        Some(standard_deviation(&self.times_real, Some(real_mean)))
+                    }
                 } else {
                     None
                 };
@@ -655,11 +683,20 @@ impl<'a> BenchmarkRunner<'a> {
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let mut excluded = Vec::new();
+        let (base_sd, base_runs) = self
+            .baseline
+            .as_ref()
+            .map(|b| (b.stddev, b.runs))
+            .unwrap_or((None, 0));
         // --target-precision: the precision reached (and the target)
         let precision_reached = self.options.target_precision.map(|target| {
             (
                 target,
-                crate::stats::precision::relative_ci_half_width(&self.times_real),
+                crate::stats::precision::relative_ci_half_width_with_baseline(
+                    &self.times_real,
+                    base_sd,
+                    base_runs,
+                ),
             )
         });
         if let Some((target, reached)) = precision_reached {
@@ -1110,6 +1147,21 @@ impl<'a> BenchmarkRunner<'a> {
         let per_run_parameters =
             benchmark_result::PerRunParameterValues::new(&self.per_run_values, &self.times_real);
 
+        let baseline = self.baseline.map(|mut b| {
+            if self.times_real.len() > 1 {
+                let var_cmd = if self.times_real.iter().all(|&x| x == self.times_real[0]) {
+                    0.0
+                } else {
+                    t_stddev.map_or(0.0, |sd| sd.powi(2)) / self.times_real.len() as f64
+                };
+                let var_base = b.stddev.map_or(0.0, |sd| sd.powi(2)) / b.runs.max(1) as f64;
+                b.net_mean_stderr = Some((var_cmd + var_base).sqrt());
+            } else {
+                b.net_mean_stderr = None;
+            }
+            b
+        });
+
         Ok(BenchmarkResult {
             command: self.command.get_name(),
             command_with_unused_parameters: self.command.get_name_with_unused_parameters(),
@@ -1146,7 +1198,7 @@ impl<'a> BenchmarkRunner<'a> {
             first_run,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
-            baseline: self.baseline.clone(),
+            baseline,
             shell: self
                 .options
                 .has_per_command_shells()
@@ -1208,24 +1260,63 @@ pub fn measure_baseline(
         }
         Ok(res)
     };
+    let mut energy_sampler = if options.measure_energy {
+        Some(get_energy_sampler())
+    } else {
+        None
+    };
     for i in 0..warmups {
+        if let Some(sampler) = energy_sampler.as_mut() {
+            sampler.start();
+        }
         run(BenchmarkIteration::Warmup(i))?;
+        if let Some(sampler) = energy_sampler.as_mut() {
+            let _ = sampler.stop();
+        }
     }
     let mut results = Vec::new();
+    let mut energy_measurements = Vec::new();
     for i in 0..runs {
+        if let Some(sampler) = energy_sampler.as_mut() {
+            sampler.start();
+        }
         let result = run(BenchmarkIteration::Benchmark(i))?;
+        let energy = energy_sampler.as_mut().and_then(|s| s.stop());
+        energy_measurements.push(energy);
         results.push(result);
     }
+    let valid_energy: Vec<f64> = energy_measurements.into_iter().flatten().collect();
+    let baseline_energy = if !valid_energy.is_empty() {
+        Some(mean(&valid_energy))
+    } else {
+        None
+    };
     let times: Vec<Second> = results.iter().map(|r| r.time_real).collect();
-    let mean_time = mean(&times);
+    let is_constant = times.iter().all(|&x| x == times[0]);
+    let mean_time = if is_constant {
+        times.first().copied().unwrap_or(0.0)
+    } else {
+        mean(&times)
+    };
+    let stddev = if times.len() > 1 {
+        if is_constant {
+            Some(0.0)
+        } else {
+            Some(standard_deviation(&times, Some(mean_time)))
+        }
+    } else {
+        None
+    };
     let baseline = benchmark_result::Baseline {
         command: command_line.to_string(),
         mean: mean_time,
-        stddev: Some(standard_deviation(&times, Some(mean_time))),
+        stddev,
         user: mean(&results.iter().map(|r| r.time_user).collect::<Vec<_>>()),
         system: mean(&results.iter().map(|r| r.time_system).collect::<Vec<_>>()),
         runs: results.len(),
         clamped_runs: 0,
+        net_mean_stderr: None,
+        energy_joules: baseline_energy,
     };
 
     if options.output_style != OutputStyleOption::Disabled {
@@ -1241,6 +1332,12 @@ pub fn measure_baseline(
             format_duration(baseline.stddev.unwrap_or(0.0), Some(unit)),
             baseline.runs
         );
+        if let Some(energy) = baseline.energy_joules {
+            crate::outln!(
+                "  Energy (mean):       {:>14}",
+                colors::yellow(format!("{energy:.3} J")).bold()
+            );
+        }
         crate::outln!();
     }
     Ok(baseline)
@@ -1662,5 +1759,77 @@ mod tests {
         let result = runner.finish(false).unwrap();
         assert_eq!(result.energy_joules, Some(vec![1.5, 2.5]));
         assert_eq!(result.mean_energy_joules, Some(2.0));
+    }
+
+    #[test]
+    fn test_baseline_net_mean_stderr() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        // cmd times: [0.1, 0.2, 0.3, 0.4] -> n = 4, mean = 0.25
+        runner.times_real = vec![0.1, 0.2, 0.3, 0.4];
+        runner.times_user = vec![0.0, 0.0, 0.0, 0.0];
+        runner.times_system = vec![0.0, 0.0, 0.0, 0.0];
+        runner.memory_usage_byte = vec![100; 4];
+        runner.energy_measurements = vec![None; 4];
+        runner.exit_codes = vec![Some(0); 4];
+        runner.resource_counters = vec![None; 4];
+        runner.all_succeeded = true;
+        runner.count = 4;
+
+        let base_stddev = 0.1;
+        let base_runs = 4;
+        runner.baseline = Some(benchmark_result::Baseline {
+            command: "base".to_string(),
+            mean: 0.05,
+            stddev: Some(base_stddev),
+            user: 0.0,
+            system: 0.0,
+            runs: base_runs,
+            clamped_runs: 0,
+            net_mean_stderr: None,
+            energy_joules: None,
+        });
+
+        let result = runner.finish(false).unwrap();
+        let baseline = result.baseline.expect("baseline should be present");
+        let cmd_sd = standard_deviation(&[0.1, 0.2, 0.3, 0.4], None);
+        let expected_se = ((cmd_sd.powi(2) / 4.0) + (base_stddev.powi(2) / 4.0)).sqrt();
+        let actual_se = baseline
+            .net_mean_stderr
+            .expect("net_mean_stderr should be present");
+        assert!((actual_se - expected_se).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_baseline_energy_subtraction() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            measure_energy: true,
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None, None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.baseline = Some(benchmark_result::Baseline {
+            command: "base".to_string(),
+            mean: 0.05,
+            stddev: Some(0.001),
+            user: 0.0,
+            system: 0.0,
+            runs: 3,
+            clamped_runs: 0,
+            net_mean_stderr: None,
+            energy_joules: Some(1.0),
+        });
+
+        assert_eq!(runner.subtract_baseline_energy(Some(2.5)), Some(1.5));
+        // Clamping to 0:
+        assert_eq!(runner.subtract_baseline_energy(Some(0.4)), Some(0.0));
+        assert_eq!(runner.subtract_baseline_energy(None), None);
     }
 }
