@@ -86,6 +86,7 @@ impl<'a> BenchmarkRunner<'a> {
                 preparation_command,
                 command.get_parameters().iter().cloned(),
             )
+            .with_per_run_parameters_of(command)
         });
 
         let conclusion_command = options.conclusion_command.as_ref().map(|values| {
@@ -99,6 +100,7 @@ impl<'a> BenchmarkRunner<'a> {
                 conclusion_command,
                 command.get_parameters().iter().cloned(),
             )
+            .with_per_run_parameters_of(command)
         });
 
         let energy_sampler = if options.measure_energy {
@@ -280,6 +282,12 @@ impl<'a> BenchmarkRunner<'a> {
         }
     }
 
+    /// `--aggregate-parameter-runs`: round the run count up to whole cycles
+    /// through the parameter values, so that every value is used equally often.
+    pub fn whole_cycles(&self, runs: u64) -> u64 {
+        runs.div_ceil(self.command.runs_multiple()) * self.command.runs_multiple()
+    }
+
     /// Number of runs to perform in addition to the requested ones, so that
     /// the requested number is still measured when the first one is excluded.
     pub fn extra_runs(&self) -> u64 {
@@ -355,7 +363,7 @@ impl<'a> BenchmarkRunner<'a> {
             cmp::max(count, 1)
         };
 
-        self.count = count + self.extra_runs();
+        self.count = self.whole_cycles(count) + self.extra_runs();
 
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);

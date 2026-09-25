@@ -237,7 +237,7 @@ impl<'a> Scheduler<'a> {
                 }
             };
             for r in &mut runners {
-                r.count = common + r.extra_runs();
+                r.count = r.whole_cycles(common) + r.extra_runs();
             }
 
             let max_count = runners.iter().map(|r| r.count).max().unwrap_or(common);

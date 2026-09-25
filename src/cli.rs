@@ -86,6 +86,38 @@ pub fn build_command() -> Command {
                        Example:  joulex --import-json baseline.json 'sleep 1'\n"),
         )
         .arg(
+            Arg::new("parameter-sample")
+                .long("parameter-sample")
+                .action(ArgAction::Append)
+                .num_args(2)
+                .value_names(["VAR", "VALUES"])
+                .help("Draw a value of the parameter VAR at random for every run, from the \
+                       comma-separated VALUES (like '-L'), instead of creating one benchmark per \
+                       value. Every command sees the same values in the same order (a paired \
+                       comparison); '--seed' changes the sequence. Can be combined with '-L'/'-P' \
+                       (which still create separate benchmarks).\n\n\
+                       Example:  joulex --parameter-sample file a.txt,b.txt,c.txt 'wc -l {file}' \
+                       'grep -c . {file}'\n"),
+        )
+        .arg(
+            Arg::new("aggregate-parameter-runs")
+                .long("aggregate-parameter-runs")
+                .action(ArgAction::SetTrue)
+                .help("Pool all values of the '-L'/'-P'/'--parameter-file' parameters into one \
+                       benchmark per command template: its runs go through all parameter \
+                       combinations in turn, and the number of runs is rounded up to whole \
+                       cycles, so every value is used equally often. Useful when each value is \
+                       one sample of the same workload (e.g. 20 different input files)."),
+        )
+        .arg(
+            Arg::new("seed")
+                .long("seed")
+                .action(ArgAction::Set)
+                .value_name("NUM")
+                .value_parser(clap::value_parser!(u64))
+                .help("Seed for '--parameter-sample' (default: 0, so runs are reproducible)."),
+        )
+        .arg(
             Arg::new("compare")
                 .long("compare")
                 .action(ArgAction::Set)
