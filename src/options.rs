@@ -18,7 +18,7 @@ pub const DEFAULT_SHELL: &str = "sh";
 pub const DEFAULT_SHELL: &str = "cmd.exe";
 
 /// Shell to use for executing benchmarked commands
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Shell {
     /// Default shell command
     Default(&'static str),
@@ -211,11 +211,39 @@ impl CommandOutputPolicy {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ExecutorKind {
     Raw,
     Shell(Shell),
     Mock(Option<String>),
+}
+
+impl ExecutorKind {
+    /// Shown per result when commands use different shells
+    pub fn name(&self) -> String {
+        match self {
+            ExecutorKind::Raw => "none".to_string(),
+            ExecutorKind::Shell(shell) => shell.to_string(),
+            ExecutorKind::Mock(shell) => shell.clone().unwrap_or_else(|| "default".to_string()),
+        }
+    }
+}
+
+impl Options {
+    /// The executor kind of command `number` (the reference, if any, is 0).
+    pub fn executor_kind_for(&self, number: usize) -> &ExecutorKind {
+        match self.executor_kinds.as_slice() {
+            [single] => single,
+            kinds => kinds.get(number).unwrap_or(&self.executor_kind),
+        }
+    }
+
+    /// Whether commands use different shells (`--shell` given per command).
+    pub fn has_per_command_shells(&self) -> bool {
+        self.executor_kinds
+            .iter()
+            .any(|kind| kind != &self.executor_kinds[0])
+    }
 }
 
 impl Default for ExecutorKind {
@@ -281,6 +309,11 @@ pub struct Options {
 
     /// Determines how we run commands
     pub executor_kind: ExecutorKind,
+
+    /// The executor of each command (including a potential reference, which
+    /// comes first): one entry for all commands, or one per command
+    /// (`--shell` given N times)
+    pub executor_kinds: Vec<ExecutorKind>,
 
     /// Where input to the benchmarked command comes from
     pub command_input_policy: CommandInputPolicy,
@@ -349,6 +382,7 @@ impl Default for Options {
             sort_order_speed_comparison: SortOrder::MeanTime,
             sort_order_exports: SortOrder::Command,
             executor_kind: ExecutorKind::default(),
+            executor_kinds: vec![ExecutorKind::default()],
             command_output_policies: vec![CommandOutputPolicy::Null],
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
@@ -523,23 +557,30 @@ impl Options {
 
         // A command given after `--` is an argument vector and always runs
         // without a shell (`--shell` conflicts with it at the CLI level).
-        options.executor_kind = if matches.get_flag("no-shell")
-            || (matches.contains_id("argv") && !matches.get_flag("debug-mode"))
-        {
-            ExecutorKind::Raw
-        } else {
-            match (
-                matches.get_flag("debug-mode"),
-                matches.get_one::<String>("shell"),
-            ) {
+        let executor_kind = |shell: Option<&String>| -> Result<ExecutorKind, OptionsError> {
+            Ok(match (matches.get_flag("debug-mode"), shell) {
                 (false, Some(shell)) if shell == "default" => ExecutorKind::Shell(Shell::default()),
                 (false, Some(shell)) if shell == "none" => ExecutorKind::Raw,
                 (false, Some(shell)) => ExecutorKind::Shell(Shell::parse_from_str(shell)?),
                 (false, None) => ExecutorKind::Shell(Shell::default()),
                 (true, Some(shell)) => ExecutorKind::Mock(Some(shell.into())),
                 (true, None) => ExecutorKind::Mock(None),
+            })
+        };
+        options.executor_kinds = if matches.get_flag("no-shell")
+            || (matches.contains_id("argv") && !matches.get_flag("debug-mode"))
+        {
+            vec![ExecutorKind::Raw]
+        } else {
+            match matches.get_many::<String>("shell") {
+                // '--shell' once for all commands, or once per command
+                Some(shells) => shells
+                    .map(|shell| executor_kind(Some(shell)))
+                    .collect::<Result<_, _>>()?,
+                None => vec![executor_kind(None)?],
             }
         };
+        options.executor_kind = options.executor_kinds[0].clone();
 
         if let Some(mode) = matches.get_one::<String>("ignore-failure") {
             options.command_failure_action = match mode.as_str() {
@@ -712,6 +753,12 @@ impl Options {
                 );
             }
         }
+
+        ensure!(
+            self.executor_kinds.len() <= 1 || self.executor_kinds.len() == num_commands,
+            "The '--shell' option has to be provided just once or N times, where N={num_commands} is \
+             the number of benchmark commands (including a potential reference)."
+        );
 
         if let Some(setup_command) = &self.setup_command {
             ensure!(

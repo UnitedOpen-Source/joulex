@@ -368,9 +368,8 @@ pub fn build_command() -> Command {
             Arg::new("shell")
                 .long("shell")
                 .short('S')
-                .action(ArgAction::Set)
+                .action(ArgAction::Append)
                 .value_name("SHELL")
-                .overrides_with("shell")
                 .value_hint(ValueHint::CommandString)
                 .help("Set the shell to use for executing benchmarked commands. This can be the \
                        name or the path to the shell executable, or a full command line \
@@ -381,7 +380,11 @@ pub fn build_command() -> Command {
                        \"sleep 0.1; sleep 0.2\" are not possible without a shell. \
                        Arguments are split with POSIX quoting rules, except on Windows, where \
                        the C runtime rules apply (double quotes only; backslashes in paths \
-                       like C:\\tools\\app.exe are kept).")
+                       like C:\\tools\\app.exe are kept). \
+                       Give '--shell' once for all commands, or once per command (in order, \
+                       including a '--reference' first) to compare shells or to mix shell and \
+                       \"none\", e.g. '-S zsh CMD1 -S bash CMD2 -S none CMD3' (the order of \
+                       the options is what counts).")
         )
         .arg(
             Arg::new("no-shell")

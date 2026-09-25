@@ -55,6 +55,7 @@ fn test_markup_export_auto_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -87,6 +88,7 @@ fn test_markup_export_auto_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
     ];
 
@@ -164,6 +166,7 @@ fn test_markup_export_auto_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -196,6 +199,7 @@ fn test_markup_export_auto_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
     ];
 
@@ -273,6 +277,7 @@ fn test_markup_export_manual_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -305,6 +310,7 @@ fn test_markup_export_manual_ms() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
     ];
 
@@ -381,6 +387,7 @@ fn test_markup_export_manual_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -413,6 +420,7 @@ fn test_markup_export_manual_s() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
     ];
 
@@ -488,6 +496,7 @@ fn test_markup_export_zero_mean_displays_na() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -520,6 +529,7 @@ fn test_markup_export_zero_mean_displays_na() {
             diagnostics: None,
             per_run_parameters: None,
             precision: None,
+            shell: None,
         },
     ];
 
