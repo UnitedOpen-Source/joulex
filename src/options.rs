@@ -183,6 +183,10 @@ pub enum CommandOutputPolicy {
 
     /// Show command output on the terminal
     Inherit,
+
+    /// Capture the tail of stdout and stderr, and show it only if a run fails
+    /// (`--show-output-on-failure`)
+    CaptureTail,
 }
 
 impl CommandOutputPolicy {
@@ -199,6 +203,8 @@ impl CommandOutputPolicy {
             }
 
             CommandOutputPolicy::Inherit => (Stdio::inherit(), Stdio::inherit()),
+
+            CommandOutputPolicy::CaptureTail => (Stdio::piped(), Stdio::piped()),
         };
 
         Ok(streams)
@@ -433,6 +439,8 @@ impl Options {
 
         options.command_output_policies = if matches.get_flag("show-output") {
             vec![CommandOutputPolicy::Inherit]
+        } else if matches.get_flag("show-output-on-failure") {
+            vec![CommandOutputPolicy::CaptureTail]
         } else if let Some(output_values) = matches.get_many::<String>("output") {
             let mut policies = vec![];
             for value in output_values {
