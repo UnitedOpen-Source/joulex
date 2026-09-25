@@ -354,6 +354,9 @@ pub struct Options {
     /// CPUs to pin every benchmarked process to (--affinity)
     pub affinity: Option<Vec<usize>>,
 
+    /// `--subtract`: a baseline command whose mean is subtracted from every run
+    pub subtract_command: Option<String>,
+
     /// Scheduling priority of every benchmarked process (--priority)
     pub priority: crate::util::priority::Priority,
 
@@ -397,6 +400,7 @@ impl Default for Options {
             show_resource_usage: false,
             affinity: None,
             priority: crate::util::priority::Priority::default(),
+            subtract_command: None,
             allow_setup_with_round_robin: false,
         }
     }
@@ -674,6 +678,7 @@ impl Options {
                 Ok(cpus)
             })
             .transpose()?;
+        options.subtract_command = matches.get_one::<String>("subtract").cloned();
         if let Some(priority) = matches.get_one::<String>("priority") {
             options.priority = crate::util::priority::Priority::parse(priority)
                 .map_err(|e| OptionsError::InvalidPriority(format!("{e:#}")))?;

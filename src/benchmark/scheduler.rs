@@ -88,6 +88,24 @@ impl<'a> Scheduler<'a> {
             executor.calibrate()?;
             executors.push((kind, executor));
         }
+        // --subtract: one baseline per executor (i.e. per shell)
+        let baselines: Vec<Option<super::benchmark_result::Baseline>> =
+            match &self.options.subtract_command {
+                Some(command) => executors
+                    .iter()
+                    .map(|(_, executor)| {
+                        super::measure_baseline(command, self.options, &**executor).map(Some)
+                    })
+                    .collect::<Result<_>>()?,
+                None => vec![None; executors.len()],
+            };
+        let baseline_for = |number: usize| {
+            let kind = self.options.executor_kind_for(number);
+            executors
+                .iter()
+                .position(|(k, _)| *k == kind)
+                .and_then(|index| baselines[index].clone())
+        };
         let executor_for = |number: usize| -> &dyn Executor {
             let kind = self.options.executor_kind_for(number);
             executors
@@ -111,13 +129,15 @@ impl<'a> Scheduler<'a> {
             let mut runners: Vec<BenchmarkRunner> = commands_to_run
                 .iter()
                 .map(|&(number, cmd)| {
-                    BenchmarkRunner::new(
+                    let mut runner = BenchmarkRunner::new(
                         number,
                         number + display_offset,
                         cmd,
                         self.options,
                         executor_for(number),
-                    )
+                    );
+                    runner.baseline = baseline_for(number);
+                    runner
                 })
                 .collect();
 
@@ -369,6 +389,7 @@ impl<'a> Scheduler<'a> {
                     self.options,
                     executor_for(number),
                 )
+                .with_baseline(baseline_for(number))
                 .run()?
                 {
                     self.results.push(res);
