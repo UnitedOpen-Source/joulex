@@ -20,20 +20,21 @@ Introduce semantic color functions wrapping `colored::ColoredString`:
 ### 2.2 Console Background Detection
 On Windows targets:
 - Inspect `STD_OUTPUT_HANDLE` via `GetStdHandle`.
+- Validate that the handle is neither null nor `INVALID_HANDLE_VALUE`.
 - Query `CONSOLE_SCREEN_BUFFER_INFO` using `GetConsoleScreenBufferInfo`.
 - Extract `wAttributes & 0x00f0` (background color mask).
-- If background color equals `0x0010` (`BACKGROUND_BLUE` without `BACKGROUND_INTENSITY`), activate `Theme::LegacyWindowsConsole`.
+- If background color equals `0x0010` (`BACKGROUND_BLUE`) or `0x0050` (`DarkMagenta`, standard background slot for PowerShell 5.1), activate `Theme::LegacyWindowsConsole`.
 - Cache detection result using `std::sync::OnceLock<Theme>`.
 
 ### 2.3 Semantic Color Mapping
 In `Theme::LegacyWindowsConsole`:
-- `Green` -> `Color::Yellow`
+- `Green` -> `Color::Green` (preserved so mean and median do not collapse)
 - `Blue` -> `Color::Cyan`
-- `Cyan` -> `Color::BrightGreen`
+- `Cyan` -> `Color::Cyan`
 - `Purple` -> `Color::BrightRed`
-- `Magenta` -> `Color::Cyan`
-- `Yellow` -> `Color::BrightYellow`
-- `Red` -> `Color::BrightRed`
+- `Magenta` -> `Color::BrightRed`
+- `Yellow` -> `Color::Yellow`
+- `Red` -> `Color::Red`
 
 In `Theme::Default` (Unix and modern Windows terminals):
 - Standard colors corresponding to their semantic names (`Green`, `Blue`, `Cyan`, `Magenta`, `Yellow`, `Red`).

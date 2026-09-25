@@ -7,6 +7,8 @@ use colored::{Color, ColoredString, Colorize};
 const BACKGROUND_COLOR_MASK: u16 = 0x00f0;
 #[cfg(any(windows, test))]
 const BLUE_BACKGROUND: u16 = 0x0010;
+#[cfg(any(windows, test))]
+const POWERSHELL_SLOT5_BACKGROUND: u16 = 0x0050;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Theme {
@@ -29,7 +31,8 @@ enum SemanticColor {
 impl Theme {
     #[cfg(any(windows, test))]
     fn from_console_attributes(attributes: u16) -> Self {
-        if attributes & BACKGROUND_COLOR_MASK == BLUE_BACKGROUND {
+        let bg = attributes & BACKGROUND_COLOR_MASK;
+        if bg == BLUE_BACKGROUND || bg == POWERSHELL_SLOT5_BACKGROUND {
             Self::LegacyWindowsConsole
         } else {
             Self::Default
@@ -48,13 +51,13 @@ impl Theme {
                 SemanticColor::Red => Color::Red,
             },
             Self::LegacyWindowsConsole => match semantic_color {
-                SemanticColor::Green => Color::Yellow,
+                SemanticColor::Green => Color::Green,
                 SemanticColor::Blue => Color::Cyan,
-                SemanticColor::Cyan => Color::BrightGreen,
+                SemanticColor::Cyan => Color::Cyan,
                 SemanticColor::Purple => Color::BrightRed,
-                SemanticColor::Magenta => Color::Cyan,
-                SemanticColor::Yellow => Color::BrightYellow,
-                SemanticColor::Red => Color::BrightRed,
+                SemanticColor::Magenta => Color::BrightRed,
+                SemanticColor::Yellow => Color::Yellow,
+                SemanticColor::Red => Color::Red,
             },
         }
     }
@@ -69,17 +72,21 @@ fn detect() -> Theme {
     {
         use std::mem::MaybeUninit;
 
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
         use windows_sys::Win32::System::Console::{
             GetConsoleScreenBufferInfo, GetStdHandle, CONSOLE_SCREEN_BUFFER_INFO, STD_OUTPUT_HANDLE,
         };
 
+        // SAFETY: GetStdHandle has no preconditions and is safe to call with standard handle constants.
         let handle = unsafe { GetStdHandle(STD_OUTPUT_HANDLE) };
-        if handle.is_null() {
+        if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             return Theme::Default;
         }
 
         let mut info = MaybeUninit::<CONSOLE_SCREEN_BUFFER_INFO>::uninit();
+        // SAFETY: `info.as_mut_ptr()` points to valid writable uninitialized memory for `CONSOLE_SCREEN_BUFFER_INFO`.
         if unsafe { GetConsoleScreenBufferInfo(handle, info.as_mut_ptr()) } != 0 {
+            // SAFETY: `info` is guaranteed to be fully initialized when `GetConsoleScreenBufferInfo` succeeds (returns non-zero).
             return Theme::from_console_attributes(unsafe { info.assume_init() }.wAttributes);
         }
     }
@@ -126,21 +133,29 @@ mod tests {
 
     #[test]
     fn legacy_windows_console_uses_readable_colors() {
-        let theme = Theme::from_console_attributes(BLUE_BACKGROUND);
+        for bg in [BLUE_BACKGROUND, POWERSHELL_SLOT5_BACKGROUND] {
+            let theme = Theme::from_console_attributes(bg);
 
-        assert_eq!(theme, Theme::LegacyWindowsConsole);
-        assert_eq!(theme.color(SemanticColor::Green), Color::Yellow);
-        assert_eq!(theme.color(SemanticColor::Blue), Color::Cyan);
-        assert_eq!(theme.color(SemanticColor::Cyan), Color::BrightGreen);
-        assert_eq!(theme.color(SemanticColor::Purple), Color::BrightRed);
-        assert_eq!(theme.color(SemanticColor::Magenta), Color::Cyan);
+            assert_eq!(theme, Theme::LegacyWindowsConsole);
+            assert_eq!(theme.color(SemanticColor::Green), Color::Green);
+            assert_eq!(theme.color(SemanticColor::Blue), Color::Cyan);
+            assert_eq!(theme.color(SemanticColor::Cyan), Color::Cyan);
+            assert_eq!(theme.color(SemanticColor::Purple), Color::BrightRed);
+            assert_eq!(theme.color(SemanticColor::Magenta), Color::BrightRed);
+            assert_eq!(theme.color(SemanticColor::Yellow), Color::Yellow);
+            assert_eq!(theme.color(SemanticColor::Red), Color::Red);
+        }
     }
 
     #[test]
-    fn only_dark_blue_background_selects_legacy_theme() {
+    fn non_blue_background_selects_default_theme() {
         assert_eq!(Theme::from_console_attributes(0), Theme::Default);
         assert_eq!(
             Theme::from_console_attributes(BLUE_BACKGROUND | 0x0080),
+            Theme::Default
+        );
+        assert_eq!(
+            Theme::from_console_attributes(POWERSHELL_SLOT5_BACKGROUND | 0x0080),
             Theme::Default
         );
         assert_eq!(Theme::from_console_attributes(0x0020), Theme::Default);
