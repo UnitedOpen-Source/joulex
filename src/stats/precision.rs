@@ -29,6 +29,11 @@ pub fn relative_ci_half_width(xs: &[f64]) -> Option<f64> {
     if mean.is_nan() || mean <= 0.0 {
         return None;
     }
+    // Exactly 0 for constant samples (the rounding of the mean would
+    // otherwise leave a variance of ~1e-33)
+    if xs.iter().all(|&x| x == xs[0]) {
+        return Some(0.0);
+    }
     let variance = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
     let standard_error = (variance / n as f64).sqrt();
     Some(t_975(n - 1) * standard_error / mean)
@@ -51,6 +56,8 @@ mod tests {
         assert_eq!(relative_ci_half_width(&[1.0]), None);
         assert_eq!(relative_ci_half_width(&[0.0, 0.0]), None);
         assert_eq!(relative_ci_half_width(&[2.0, 2.0, 2.0]), Some(0.0));
+        // Ten times 0.1: the mean is 0.10000000000000002, still exactly 0
+        assert_eq!(relative_ci_half_width(&[0.1; 10]), Some(0.0));
         // mean 10, sd 1, n = 4: 3.182 * 0.5 / 10
         let xs = [9.0, 11.0, 9.0, 11.0];
         let sd = (4.0f64 / 3.0).sqrt();
