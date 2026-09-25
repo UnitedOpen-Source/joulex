@@ -73,13 +73,29 @@ impl<'a> Scheduler<'a> {
             return Ok(());
         }
 
-        let mut executor: Box<dyn Executor> = match self.options.executor_kind {
-            ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
-            ExecutorKind::Mock(ref shell) => Box::new(MockExecutor::new(shell.clone())),
-            ExecutorKind::Shell(ref shell) => Box::new(ShellExecutor::new(shell, self.options)),
+        // One executor per distinct shell ('--shell' may be given per
+        // command), each calibrated once
+        let mut executors: Vec<(&ExecutorKind, Box<dyn Executor>)> = Vec::new();
+        for kind in &self.options.executor_kinds {
+            if executors.iter().any(|(k, _)| *k == kind) {
+                continue;
+            }
+            let mut executor: Box<dyn Executor> = match kind {
+                ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
+                ExecutorKind::Mock(shell) => Box::new(MockExecutor::new(shell.clone())),
+                ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
+            };
+            executor.calibrate()?;
+            executors.push((kind, executor));
+        }
+        let executor_for = |number: usize| -> &dyn Executor {
+            let kind = self.options.executor_kind_for(number);
+            executors
+                .iter()
+                .find(|(k, _)| *k == kind)
+                .map(|(_, executor)| &**executor)
+                .unwrap_or(&*executors[0].1)
         };
-
-        executor.calibrate()?;
 
         let display_offset = self.results.len();
         // The reference command (if any) is benchmarked first, right after the
@@ -100,7 +116,7 @@ impl<'a> Scheduler<'a> {
                         number + display_offset,
                         cmd,
                         self.options,
-                        &*executor,
+                        executor_for(number),
                     )
                 })
                 .collect();
@@ -351,7 +367,7 @@ impl<'a> Scheduler<'a> {
                     number + display_offset,
                     cmd,
                     self.options,
-                    &*executor,
+                    executor_for(number),
                 )
                 .run()?
                 {

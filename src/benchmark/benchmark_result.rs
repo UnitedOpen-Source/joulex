@@ -127,6 +127,11 @@ pub struct BenchmarkResult {
     /// `--target-precision`: the target and the precision reached
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub precision: Option<PrecisionReached>,
+
+    /// The shell this command ran in, when commands use different shells
+    /// (`--shell` given per command); "none" without a shell
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<String>,
 }
 
 /// `--target-precision`: how precisely the mean is known.

@@ -10,7 +10,7 @@ use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
 use crate::energy::{get_energy_sampler, EnergySampler};
 use crate::options::{
-    CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options, OutputStyleOption,
+    CmdFailureAction, CommandOutputPolicy, FirstRunPolicy, Options, OutputStyleOption,
 };
 use crate::outlier_detection::{
     modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
@@ -865,9 +865,7 @@ impl<'a> BenchmarkRunner<'a> {
         let mut warnings = vec![];
 
         // Check execution time
-        if matches!(self.options.executor_kind, ExecutorKind::Shell(_))
-            && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME)
-        {
+        if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME) {
             warnings.push(Warnings::FastExecutionTime);
         }
 
@@ -1036,6 +1034,10 @@ impl<'a> BenchmarkRunner<'a> {
             first_run,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
+            shell: self
+                .options
+                .has_per_command_shells()
+                .then(|| self.options.executor_kind_for(self.number).name()),
             precision: precision_reached.map(|(target, reached)| {
                 benchmark_result::PrecisionReached {
                     target,

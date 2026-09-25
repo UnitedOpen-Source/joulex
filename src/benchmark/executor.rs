@@ -54,6 +54,12 @@ pub trait Executor {
     /// that is being used in addition to the actual runtime
     /// of the command.
     fn time_overhead(&self) -> Second;
+
+    /// Whether commands run through an intermediate shell (whose spawning
+    /// time is subtracted, which limits the accuracy for very fast commands)
+    fn uses_shell(&self) -> bool {
+        false
+    }
 }
 
 /// How every benchmarked (and intermediate) process is started
@@ -471,6 +477,10 @@ impl Executor for ShellExecutor<'_> {
         });
 
         Ok(())
+    }
+
+    fn uses_shell(&self) -> bool {
+        true
     }
 
     fn time_overhead(&self) -> Second {
