@@ -297,7 +297,10 @@ impl<'a> Commands<'a> {
                     .copied();
                 i += 1;
 
-                let (command_index, params_indices) = index.split_first().unwrap();
+                // `index` always starts with the command dimension
+                let Some((command_index, params_indices)) = index.split_first() else {
+                    bail!("internal error: empty parameter index");
+                };
                 let parameters: Vec<_> = param_names_and_values
                     .iter()
                     .zip(params_indices)
@@ -474,11 +477,10 @@ impl<'a> Commands<'a> {
         let param_min = Decimal::from_str(param_min)?;
         let param_max = Decimal::from_str(param_max)?;
 
-        if step.is_none() {
+        let Some(step) = step else {
             return Err(ParameterScanError::StepRequired);
-        }
-
-        let step = Decimal::from_str(step.unwrap())?;
+        };
+        let step = Decimal::from_str(step)?;
         let param_range = RangeStep::new(param_min, param_max, step)?;
         Ok(param_range
             .map(|v| ParameterValue::Numeric(v.into()))

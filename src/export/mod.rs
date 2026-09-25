@@ -193,7 +193,9 @@ impl ExportManager {
                 ExportTarget::Stdout => {
                     if !intermediate {
                         println!();
-                        println!("{}", String::from_utf8(content()?).unwrap());
+                        let content = String::from_utf8(content()?)
+                            .context("Export produced invalid UTF-8")?;
+                        println!("{content}");
                     }
                 }
             }

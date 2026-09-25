@@ -469,7 +469,8 @@ impl Options {
             None | Some("auto") => (SortOrder::MeanTime, SortOrder::Command),
             Some("command") => (SortOrder::Command, SortOrder::Command),
             Some("mean-time") => (SortOrder::MeanTime, SortOrder::MeanTime),
-            Some(_) => unreachable!("Unknown sort order"),
+            // clap only accepts the values above; treat anything else like "auto"
+            Some(_) => (SortOrder::MeanTime, SortOrder::Command),
         };
 
         options.executor_kind = if matches.get_flag("no-shell") {

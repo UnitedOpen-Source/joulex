@@ -10,15 +10,17 @@ impl MarkupExporter for OrgmodeExporter {
     }
 
     fn table_row(&self, cells: &[&str]) -> String {
-        format!(
-            "| {}  |  {} |\n",
-            cells.first().unwrap(),
-            cells[1..].join(" |  ")
-        )
+        match cells.split_first() {
+            Some((first, rest)) => format!("| {first}  |  {} |\n", rest.join(" |  ")),
+            None => "|  |\n".to_string(),
+        }
     }
 
     fn table_divider(&self, cell_aligmnents: &[Alignment]) -> String {
-        format!("|{}--|\n", "--+".repeat(cell_aligmnents.len() - 1))
+        format!(
+            "|{}--|\n",
+            "--+".repeat(cell_aligmnents.len().saturating_sub(1))
+        )
     }
 
     fn command(&self, cmd: &str) -> String {
@@ -78,4 +80,12 @@ fn test_orgmode_command_escaping() {
     assert_eq!(exporter.command("a | b"), "a \\vert{} b");
     assert_eq!(exporter.command("x=1 y"), "x=1 y");
     assert_eq!(exporter.command(" padded"), " padded");
+}
+
+#[test]
+fn test_orgmode_table_row_and_divider_handle_few_cells() {
+    let exporter = OrgmodeExporter::default();
+    assert_eq!(exporter.table_row(&[]), "|  |\n");
+    assert_eq!(exporter.table_row(&["a"]), "| a  |   |\n");
+    assert_eq!(exporter.table_divider(&[]), "|--|\n");
 }
