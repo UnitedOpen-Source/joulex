@@ -118,6 +118,74 @@ pub struct BenchmarkResult {
     /// outlier-inflated variance)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub diagnostics: Option<crate::stats::diagnostics::Diagnostics>,
+
+    /// Which per-run parameter values each run used (`--parameter-sample`,
+    /// `--aggregate-parameter-runs`), and the statistics per value
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub per_run_parameters: Option<PerRunParameterValues>,
+}
+
+/// Per-run parameter values, aligned with `times`, and statistics per value.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PerRunParameterValues {
+    /// For each variable, the value of every run (aligned with `times`)
+    pub values: BTreeMap<String, Vec<String>>,
+    /// For each variable and value: statistics of the runs that used it
+    pub stats: BTreeMap<String, BTreeMap<String, ValueStats>>,
+}
+
+/// Run time statistics of the runs that used one parameter value.
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ValueStats {
+    pub mean: Second,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stddev: Option<Second>,
+    pub runs: usize,
+}
+
+impl PerRunParameterValues {
+    /// From the values of each run (as (name, value) pairs) and the run times.
+    pub fn new(per_run: &[Vec<(String, String)>], times: &[Second]) -> Option<Self> {
+        if per_run.is_empty() || per_run.iter().all(Vec::is_empty) || per_run.len() != times.len() {
+            return None;
+        }
+        let mut values: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut by_value: BTreeMap<String, BTreeMap<String, Vec<Second>>> = BTreeMap::new();
+        for (run, &time) in per_run.iter().zip(times) {
+            for (name, value) in run {
+                values.entry(name.clone()).or_default().push(value.clone());
+                by_value
+                    .entry(name.clone())
+                    .or_default()
+                    .entry(value.clone())
+                    .or_default()
+                    .push(time);
+            }
+        }
+        let stats = by_value
+            .into_iter()
+            .map(|(name, groups)| {
+                let groups = groups
+                    .into_iter()
+                    .map(|(value, times)| {
+                        let mean = crate::stats::basic::mean(&times);
+                        let stddev = (times.len() > 1)
+                            .then(|| crate::stats::basic::standard_deviation(&times, Some(mean)));
+                        (
+                            value,
+                            ValueStats {
+                                mean,
+                                stddev,
+                                runs: times.len(),
+                            },
+                        )
+                    })
+                    .collect();
+                (name, groups)
+            })
+            .collect();
+        Some(PerRunParameterValues { values, stats })
+    }
 }
 
 /// The first (cold) run of a benchmark (`--first-run=separate`).
@@ -233,4 +301,33 @@ mod tests {
         let json = serde_json::to_string(&r).unwrap();
         assert!(!json.contains("omitted_failed_runs"));
     }
+}
+
+#[test]
+fn per_run_parameter_values_and_stats() {
+    let run = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.to_string()))
+            .collect()
+    };
+    let per_run = [
+        run(&[("f", "a"), ("t", "1")]),
+        run(&[("f", "b"), ("t", "1")]),
+        run(&[("f", "a"), ("t", "2")]),
+    ];
+    let values = PerRunParameterValues::new(&per_run, &[1.0, 2.0, 3.0]).unwrap();
+    assert_eq!(values.values["f"], ["a", "b", "a"]);
+    assert_eq!(values.values["t"], ["1", "1", "2"]);
+    let a = &values.stats["f"]["a"];
+    assert_eq!((a.mean, a.runs), (2.0, 2));
+    assert!((a.stddev.unwrap() - std::f64::consts::SQRT_2).abs() < 1e-12);
+    assert_eq!(values.stats["f"]["b"].stddev, None);
+
+    // Nothing without per-run parameters, or if misaligned
+    assert_eq!(
+        PerRunParameterValues::new(&[vec![], vec![]], &[1.0, 2.0]),
+        None
+    );
+    assert_eq!(PerRunParameterValues::new(&per_run, &[1.0]), None);
 }

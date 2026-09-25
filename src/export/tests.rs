@@ -53,6 +53,7 @@ fn test_markup_export_auto_ms() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -83,6 +84,7 @@ fn test_markup_export_auto_ms() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
     ];
 
@@ -158,6 +160,7 @@ fn test_markup_export_auto_s() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -188,6 +191,7 @@ fn test_markup_export_auto_s() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
     ];
 
@@ -263,6 +267,7 @@ fn test_markup_export_manual_ms() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -293,6 +298,7 @@ fn test_markup_export_manual_ms() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
     ];
 
@@ -367,6 +373,7 @@ fn test_markup_export_manual_s() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -397,6 +404,7 @@ fn test_markup_export_manual_s() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
     ];
 
@@ -470,6 +478,7 @@ fn test_markup_export_zero_mean_displays_na() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -500,6 +509,7 @@ fn test_markup_export_zero_mean_displays_na() {
             runs_planned: None,
             first_run: None,
             diagnostics: None,
+            per_run_parameters: None,
         },
     ];
 

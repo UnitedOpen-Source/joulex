@@ -208,6 +208,19 @@ impl<'a> Command<'a> {
             .max(1)
     }
 
+    /// The per-run parameter values used in `iteration`, as (name, value);
+    /// empty without per-run parameters.
+    pub fn per_run_values(
+        &self,
+        iteration: &crate::benchmark::executor::BenchmarkIteration,
+    ) -> Vec<(String, String)> {
+        self.per_run
+            .iter()
+            .flat_map(|p| p.values_for(iteration))
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect()
+    }
+
     /// This command as it runs in `iteration`: `{iteration}` and the per-run
     /// parameters are substituted.
     pub fn for_iteration(

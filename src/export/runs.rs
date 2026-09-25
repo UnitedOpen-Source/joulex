@@ -42,9 +42,22 @@ impl<M: MarkupExporter> RunsExporter<M> {
         let energy = per_run(result.energy_joules.as_ref(), n);
         let memory = result.memory_usage_byte.as_ref().filter(|m| m.len() == n);
         let exit_codes = Some(&result.exit_codes).filter(|e| e.len() == n);
+        // Per-run parameter values (--parameter-sample, --aggregate-parameter-runs)
+        let parameters: Vec<(&String, &Vec<String>)> = result
+            .per_run_parameters
+            .iter()
+            .flat_map(|p| p.values.iter())
+            .filter(|(_, values)| values.len() == n)
+            .collect();
         let unit_name = unit.short_name();
 
-        let mut header = vec!["Iteration".to_string(), format!("Wall [{unit_name}]")];
+        let mut header = vec!["Iteration".to_string()];
+        header.extend(
+            parameters
+                .iter()
+                .map(|(name, _)| crate::util::sanitize::escape_control_chars(name).into_owned()),
+        );
+        header.push(format!("Wall [{unit_name}]"));
         if user.is_some() && system.is_some() {
             header.push(format!("User [{unit_name}]"));
             header.push(format!("System [{unit_name}]"));
@@ -67,7 +80,11 @@ impl<M: MarkupExporter> RunsExporter<M> {
 
         let duration = |v: f64| format_duration_value(v, Some(unit)).0;
         for (i, iteration) in iteration_numbers(result, n).into_iter().enumerate() {
-            let mut row = vec![iteration.to_string(), duration(times[i])];
+            let mut row = vec![iteration.to_string()];
+            row.extend(parameters.iter().map(|(_, values)| {
+                crate::util::sanitize::escape_control_chars(&values[i]).into_owned()
+            }));
+            row.push(duration(times[i]));
             if let (Some(user), Some(system)) = (user, system) {
                 row.push(duration(user[i]));
                 row.push(duration(system[i]));
