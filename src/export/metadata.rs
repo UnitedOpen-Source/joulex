@@ -60,13 +60,10 @@ impl ExportMetadata {
 fn cpu_model() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
-        let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").ok()?;
-        cpuinfo
-            .lines()
-            .filter_map(|line| line.split_once(':'))
-            .find(|(key, _)| matches!(key.trim(), "model name" | "Model" | "Hardware"))
-            .map(|(_, value)| value.trim().to_string())
-            .filter(|model| !model.is_empty())
+        let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").unwrap_or_default();
+        // Device-tree boards (e.g. "Raspberry Pi 4 Model B Rev 1.4")
+        let board = std::fs::read_to_string("/sys/firmware/devicetree/base/model").ok();
+        linux_cpu_model(&cpuinfo, board.as_deref())
     }
     #[cfg(target_os = "macos")]
     {
@@ -102,6 +99,74 @@ fn sysctl_string(name: &std::ffi::CStr) -> Option<String> {
     }
     let value = std::ffi::CStr::from_bytes_until_nul(&buf[..len.min(buf.len())]).ok()?;
     Some(value.to_string_lossy().trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// The CPU model from `/proc/cpuinfo`. On ARM, where there is no model name
+/// (#188), fall back to the device-tree board model, then to the CPU
+/// implementer and part numbers (like `lscpu`).
+#[cfg(any(target_os = "linux", test))]
+fn linux_cpu_model(cpuinfo: &str, device_tree_model: Option<&str>) -> Option<String> {
+    let field = |name: &str| {
+        cpuinfo
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(key, _)| key.trim() == name)
+            .map(|(_, value)| value.trim())
+            .filter(|value| !value.is_empty())
+    };
+    if let Some(model) = ["model name", "Model", "Hardware"]
+        .iter()
+        .find_map(|name| field(name))
+    {
+        return Some(model.to_string());
+    }
+    if let Some(board) = device_tree_model
+        .map(|m| m.trim_end_matches('\0').trim())
+        .filter(|m| !m.is_empty())
+    {
+        return Some(board.to_string());
+    }
+    let parse_hex = |value: &str| u32::from_str_radix(value.trim_start_matches("0x"), 16).ok();
+    let implementer = field("CPU implementer").and_then(parse_hex)?;
+    let part = field("CPU part").and_then(parse_hex);
+    Some(arm_cpu_name(implementer, part))
+}
+
+/// Names for the MIDR implementer and part numbers of common ARM cores.
+#[cfg(any(target_os = "linux", test))]
+fn arm_cpu_name(implementer: u32, part: Option<u32>) -> String {
+    let vendor = match implementer {
+        0x41 => "ARM",
+        0x42 => "Broadcom",
+        0x43 => "Cavium",
+        0x46 => "Fujitsu",
+        0x48 => "HiSilicon",
+        0x4e => "NVIDIA",
+        0x51 => "Qualcomm",
+        0x53 => "Samsung",
+        0x61 => "Apple",
+        0x6d => "Microsoft",
+        0xc0 => "Ampere",
+        _ => return format!("ARM CPU (implementer {implementer:#04x})"),
+    };
+    let core = match (implementer, part) {
+        (0x41, Some(0xd03)) => Some("Cortex-A53"),
+        (0x41, Some(0xd05)) => Some("Cortex-A55"),
+        (0x41, Some(0xd07)) => Some("Cortex-A57"),
+        (0x41, Some(0xd08)) => Some("Cortex-A72"),
+        (0x41, Some(0xd0b)) => Some("Cortex-A76"),
+        (0x41, Some(0xd0c)) => Some("Neoverse-N1"),
+        (0x41, Some(0xd40)) => Some("Neoverse-V1"),
+        (0x41, Some(0xd49)) => Some("Neoverse-N2"),
+        (0x41, Some(0xd4f)) => Some("Neoverse-V2"),
+        (0xc0, Some(0xac3)) => Some("Ampere-1"),
+        _ => None,
+    };
+    match (core, part) {
+        (Some(core), _) => format!("{vendor} {core}"),
+        (None, Some(part)) => format!("{vendor} CPU (part {part:#05x})"),
+        (None, None) => format!("{vendor} CPU"),
+    }
 }
 
 /// The kernel release from `uname`, on Unix.
@@ -220,4 +285,37 @@ mod tests {
         assert!(parse_labels(["bad key=1"]).is_err());
         assert!(parse_labels(["a=1", "a=2"]).is_err());
     }
+}
+
+#[test]
+fn test_linux_cpu_model() {
+    let x86 = "processor\t: 0\nvendor_id\t: GenuineIntel\nmodel name\t: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz\n";
+    assert_eq!(
+        linux_cpu_model(x86, None).as_deref(),
+        Some("Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz")
+    );
+
+    // aarch64 (e.g. an AWS Graviton2): no model name
+    let arm = "processor\t: 0\nBogoMIPS\t: 243.75\nCPU implementer\t: 0x41\nCPU architecture: 8\nCPU part\t: 0xd0c\n";
+    assert_eq!(
+        linux_cpu_model(arm, None).as_deref(),
+        Some("ARM Neoverse-N1")
+    );
+    // A device-tree board model wins over the core name
+    assert_eq!(
+        linux_cpu_model(arm, Some("Raspberry Pi 4 Model B Rev 1.4\0")).as_deref(),
+        Some("Raspberry Pi 4 Model B Rev 1.4")
+    );
+    // Apple Silicon under virtualization reports part 0x000
+    let apple = "CPU implementer\t: 0x61\nCPU part\t: 0x000\n";
+    assert_eq!(
+        linux_cpu_model(apple, None).as_deref(),
+        Some("Apple CPU (part 0x000)")
+    );
+    assert_eq!(
+        linux_cpu_model("CPU implementer\t: 0x99\n", None).as_deref(),
+        Some("ARM CPU (implementer 0x99)")
+    );
+    assert_eq!(linux_cpu_model("", None), None);
+    assert_eq!(linux_cpu_model("", Some("\0")), None);
 }
