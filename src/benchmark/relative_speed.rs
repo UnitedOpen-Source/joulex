@@ -17,6 +17,11 @@ pub fn compare_mean_time(l: &BenchmarkResult, r: &BenchmarkResult) -> Ordering {
     l.mean.partial_cmp(&r.mean).unwrap_or(Ordering::Equal)
 }
 
+/// The result with the smallest mean.
+///
+/// # Panics
+/// If `results` is empty. Every caller checks this first (an empty result set
+/// has no relative speeds).
 pub fn fastest_of(results: &[BenchmarkResult]) -> &BenchmarkResult {
     results
         .iter()
