@@ -21,16 +21,14 @@ Status: ✔ ok, ! warn (a condition: load, battery, heat, Low Power Mode),
 ✖ fail (a setting known to add noise: governor, turbo boost). Strict fails on
 anything that is not ✔.
 
-| Check | Linux | macOS |
-|---|---|---|
-| CPU governor | all `cpu*/cpufreq/scaling_governor` = performance | — |
-| Turbo boost | `intel_pstate/no_turbo` = 1 or `cpufreq/boost` = 0 | — |
-| Load average | 1-min load < max(1, 0.1 × CPUs) (`/proc/loadavg`) | same (`getloadavg`) |
-| Power source | a `Mains` supply online (skipped without one, e.g. servers) | `pmset -g batt` |
-| Low Power Mode | — | `pmset -g` `lowpowermode 0` |
-| Thermal | max `thermal_zone*/temp` < 85 °C | `pmset -g therm` `CPU_Speed_Limit` = 100 |
-
-Windows: no checks yet; the report says so.
+| Check | Linux | macOS | Windows |
+|---|---|---|---|
+| CPU governor | all `cpu*/cpufreq/scaling_governor` = performance | — | — |
+| Turbo boost | `intel_pstate/no_turbo` = 1 or `cpufreq/boost` = 0 | — | — |
+| Load average / CPU load | 1-min load < max(1, 0.1 × CPUs) (`/proc/loadavg`) | 1-min load < max(1, 0.5 × CPUs) (`getloadavg`) | `GetSystemTimes` delta < 10% busy |
+| Power source | a `Mains` supply online (skipped without one, e.g. servers) | `pmset -g batt` | `GetSystemPowerStatus` (AC vs battery, battery saver) |
+| Low Power Mode / Power plan | — | `pmset -g` `lowpowermode 0` | `PowerGetActiveScheme` (High/Ultimate performance) |
+| Thermal | max `thermal_zone*/temp` < 85 °C | `pmset -g therm` `CPU_Speed_Limit` = 100 | — |
 
 ## Environment metadata (always, not only with `--check-system`)
 `joulex.system` in the JSON gains `cpu_model` (Linux `/proc/cpuinfo`, macOS

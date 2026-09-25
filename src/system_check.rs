@@ -78,7 +78,12 @@ pub fn run_checks() -> Vec<Check> {
     {
         macos_checks(cpus)
     }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(target_os = "windows")]
+    {
+        let _ = cpus;
+        windows_checks()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         let _ = cpus;
         Vec::new()
@@ -366,6 +371,211 @@ fn parse_pmset_speed_limit(output: &str) -> Option<u32> {
     line.split('=').nth(1)?.trim().parse().ok()
 }
 
+// ---------------------------------------------------------------------------
+// Windows
+
+#[cfg(target_os = "windows")]
+fn windows_checks() -> Vec<Check> {
+    let mut checks = Vec::new();
+
+    // 1. Power source
+    unsafe {
+        let mut status: windows_sys::Win32::System::Power::SYSTEM_POWER_STATUS = std::mem::zeroed();
+        // SAFETY: `status` is a valid, writable pointer to SYSTEM_POWER_STATUS.
+        if windows_sys::Win32::System::Power::GetSystemPowerStatus(&mut status) != 0 {
+            let battery_saver = status.SystemStatusFlag == 1;
+            if let Some(check) = power_check_windows(status.ACLineStatus, battery_saver) {
+                checks.push(check);
+            }
+        }
+    }
+
+    // 2. Power plan
+    if let Some(plan_name) = active_power_plan_windows() {
+        checks.push(power_plan_check(&plan_name));
+    }
+
+    // 3. CPU load (over 100 ms)
+    if let Some(busy_pct) = get_system_times_usage(100) {
+        checks.push(cpu_load_check_windows(busy_pct));
+    }
+
+    checks
+}
+
+#[cfg(target_os = "windows")]
+fn filetime_to_u64(ft: windows_sys::Win32::Foundation::FILETIME) -> u64 {
+    ((ft.dwHighDateTime as u64) << 32) | (ft.dwLowDateTime as u64)
+}
+
+#[cfg(target_os = "windows")]
+fn get_system_times_usage(sleep_ms: u64) -> Option<f64> {
+    unsafe {
+        let mut idle1: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        let mut kernel1: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        let mut user1: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        // SAFETY: Pointers are valid, writable FILETIME structures.
+        if windows_sys::Win32::System::Threading::GetSystemTimes(
+            &mut idle1,
+            &mut kernel1,
+            &mut user1,
+        ) == 0
+        {
+            return None;
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+
+        let mut idle2: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        let mut kernel2: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        let mut user2: windows_sys::Win32::Foundation::FILETIME = std::mem::zeroed();
+        // SAFETY: Pointers are valid, writable FILETIME structures.
+        if windows_sys::Win32::System::Threading::GetSystemTimes(
+            &mut idle2,
+            &mut kernel2,
+            &mut user2,
+        ) == 0
+        {
+            return None;
+        }
+
+        let idle = filetime_to_u64(idle2).saturating_sub(filetime_to_u64(idle1));
+        let kernel = filetime_to_u64(kernel2).saturating_sub(filetime_to_u64(kernel1));
+        let user = filetime_to_u64(user2).saturating_sub(filetime_to_u64(user1));
+
+        let total = kernel + user;
+        if total == 0 {
+            return None;
+        }
+        let busy = total.saturating_sub(idle);
+        Some((busy as f64 / total as f64) * 100.0)
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn active_power_plan_windows() -> Option<String> {
+    unsafe {
+        let mut guid_ptr: *mut windows_sys::core::GUID = std::ptr::null_mut();
+        // SAFETY: PowerGetActiveScheme allocates the active policy GUID and writes its address.
+        let err = windows_sys::Win32::System::Power::PowerGetActiveScheme(
+            std::ptr::null_mut(),
+            &mut guid_ptr,
+        );
+        if err != 0 || guid_ptr.is_null() {
+            return None;
+        }
+
+        let mut buf_size: u32 = 0;
+        let _ = windows_sys::Win32::System::Power::PowerReadFriendlyName(
+            std::ptr::null_mut(),
+            guid_ptr,
+            std::ptr::null(),
+            std::ptr::null(),
+            std::ptr::null_mut(),
+            &mut buf_size,
+        );
+
+        let name = if buf_size > 1 {
+            let mut buf = vec![0u8; buf_size as usize];
+            let err = windows_sys::Win32::System::Power::PowerReadFriendlyName(
+                std::ptr::null_mut(),
+                guid_ptr,
+                std::ptr::null(),
+                std::ptr::null(),
+                buf.as_mut_ptr(),
+                &mut buf_size,
+            );
+            if err == 0 {
+                let u16_len = (buf_size as usize) / 2;
+                let u16_slice: &[u16] =
+                    std::slice::from_raw_parts(buf.as_ptr() as *const u16, u16_len);
+                let s = String::from_utf16_lossy(u16_slice)
+                    .trim_matches('\0')
+                    .trim()
+                    .to_string();
+                if !s.is_empty() {
+                    Some(s)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let resolved_name = name.unwrap_or_else(|| match (*guid_ptr).data1 {
+            0x381b4222 => "Balanced".to_string(),
+            0x8c5e7fda => "High performance".to_string(),
+            0xa1841308 => "Power saver".to_string(),
+            0xe9a42b02 => "Ultimate Performance".to_string(),
+            _ => format!("{:08x}", (*guid_ptr).data1),
+        });
+
+        // SAFETY: LocalFree frees the GUID allocated by PowerGetActiveScheme.
+        windows_sys::Win32::Foundation::LocalFree(guid_ptr as _);
+
+        Some(resolved_name)
+    }
+}
+
+/// Windows power status check: AC line status (0 = offline/battery, 1 = online/AC, 255 = unknown)
+/// and battery saver status flag.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn power_check_windows(ac_line_status: u8, battery_saver: bool) -> Option<Check> {
+    if ac_line_status == 255 {
+        return None;
+    }
+    let on_battery = ac_line_status == 0;
+    if on_battery {
+        Some(
+            Check::new("Power source", Status::Warn, "battery")
+                .with_hint("connect the power adapter (on battery, CPUs are often clocked down)"),
+        )
+    } else if battery_saver {
+        Some(
+            Check::new("Power source", Status::Warn, "AC (battery saver on)")
+                .with_hint("turn off Battery Saver in Settings → System → Power & battery"),
+        )
+    } else {
+        Some(Check::new("Power source", Status::Ok, "AC"))
+    }
+}
+
+/// Windows power plan check: warns unless configured for "High performance" or "Ultimate Performance".
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn power_plan_check(plan_name: &str) -> Check {
+    let is_high_perf = plan_name.eq_ignore_ascii_case("High performance")
+        || plan_name.eq_ignore_ascii_case("Ultimate Performance")
+        || plan_name.to_ascii_lowercase().contains("performance");
+    Check::new(
+        "Power plan",
+        if is_high_perf {
+            Status::Ok
+        } else {
+            Status::Warn
+        },
+        plan_name,
+    )
+    .with_hint("set power plan to 'High performance' (powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c)")
+}
+
+/// Windows CPU load check: warns if system CPU busy percentage is 10% or higher.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn cpu_load_check_windows(cpu_percent: f64) -> Check {
+    Check::new(
+        "CPU load",
+        if cpu_percent < 10.0 {
+            Status::Ok
+        } else {
+            Status::Warn
+        },
+        format!("{cpu_percent:.1}% busy"),
+    )
+    .with_hint("stop other programs, or benchmark on an idle machine")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,5 +708,69 @@ mod tests {
                 ("Thermal", Status::Ok, "max 47 °C"),
             ]
         );
+    }
+
+    #[test]
+    fn windows_power() {
+        assert!(power_check_windows(255, false).is_none());
+        assert!(power_check_windows(255, true).is_none());
+
+        let batt = power_check_windows(0, false).unwrap();
+        assert_eq!(batt.status, Status::Warn);
+        assert_eq!(batt.detail, "battery");
+        assert!(batt.hint.unwrap().contains("connect the power adapter"));
+
+        let ac = power_check_windows(1, false).unwrap();
+        assert_eq!(ac.status, Status::Ok);
+        assert_eq!(ac.detail, "AC");
+        assert!(ac.hint.is_none());
+
+        let ac_saver = power_check_windows(1, true).unwrap();
+        assert_eq!(ac_saver.status, Status::Warn);
+        assert_eq!(ac_saver.detail, "AC (battery saver on)");
+        assert!(ac_saver.hint.unwrap().contains("turn off Battery Saver"));
+    }
+
+    #[test]
+    fn windows_power_plan() {
+        let hp = power_plan_check("High performance");
+        assert_eq!(hp.status, Status::Ok);
+        assert_eq!(hp.detail, "High performance");
+
+        let ult = power_plan_check("Ultimate Performance");
+        assert_eq!(ult.status, Status::Ok);
+        assert_eq!(ult.detail, "Ultimate Performance");
+
+        let custom_perf = power_plan_check("My Custom Performance Plan");
+        assert_eq!(custom_perf.status, Status::Ok);
+
+        let balanced = power_plan_check("Balanced");
+        assert_eq!(balanced.status, Status::Warn);
+        assert_eq!(balanced.detail, "Balanced");
+        assert!(balanced.hint.unwrap().contains("powercfg /setactive"));
+
+        let saver = power_plan_check("Power saver");
+        assert_eq!(saver.status, Status::Warn);
+        assert_eq!(saver.detail, "Power saver");
+    }
+
+    #[test]
+    fn windows_cpu_load() {
+        let low = cpu_load_check_windows(2.5);
+        assert_eq!(low.status, Status::Ok);
+        assert_eq!(low.detail, "2.5% busy");
+
+        let border_low = cpu_load_check_windows(9.9);
+        assert_eq!(border_low.status, Status::Ok);
+        assert_eq!(border_low.detail, "9.9% busy");
+
+        let border_high = cpu_load_check_windows(10.0);
+        assert_eq!(border_high.status, Status::Warn);
+        assert_eq!(border_high.detail, "10.0% busy");
+        assert!(border_high.hint.unwrap().contains("idle machine"));
+
+        let high = cpu_load_check_windows(75.3);
+        assert_eq!(high.status, Status::Warn);
+        assert_eq!(high.detail, "75.3% busy");
     }
 }
