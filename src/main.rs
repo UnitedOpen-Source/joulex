@@ -14,7 +14,7 @@ use export::ExportManager;
 use options::Options;
 
 use anyhow::Result;
-use colored::*;
+use output::colors;
 
 pub mod benchmark;
 pub mod cli;
@@ -105,7 +105,7 @@ fn main() {
             if crate::util::interrupt::interrupted() {
                 std::process::exit(130);
             }
-            eprintln!("{} {:#}", "Error:".red(), e);
+            eprintln!("{} {:#}", colors::red("Error:"), e);
             std::process::exit(1);
         }
     }

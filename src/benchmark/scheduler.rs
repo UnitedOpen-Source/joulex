@@ -1,12 +1,13 @@
 use super::benchmark_result::BenchmarkResult;
 use super::executor::{Executor, MockExecutor, RawExecutor, ShellExecutor};
 use super::{relative_speed, Benchmark, BenchmarkRunner};
-use colored::*;
+use colored::Colorize as _;
 use std::cmp::Ordering;
 
 use crate::command::{Command, Commands};
 use crate::export::ExportManager;
 use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
+use crate::output::colors;
 use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 
@@ -45,7 +46,7 @@ impl<'a> Scheduler<'a> {
                     "{}{}: {} (imported)",
                     "Benchmark ".bold(),
                     (self.results.len() + 1).to_string().bold(),
-                    res.command_with_unused_parameters.cyan()
+                    colors::cyan(&res.command_with_unused_parameters)
                 );
             }
             self.results.push(res);
@@ -292,7 +293,7 @@ impl<'a> Scheduler<'a> {
                             "{}{}: {} (interrupted before completing any runs)",
                             "Benchmark ".bold(),
                             (runner.display_number + 1).to_string().bold(),
-                            runner.command.get_name_with_unused_parameters().cyan()
+                            colors::cyan(runner.command.get_name_with_unused_parameters())
                         );
                     }
                     continue;
@@ -410,7 +411,7 @@ impl<'a> Scheduler<'a> {
 
                     println!(
                         "  {} ran",
-                        reference.result.command_with_unused_parameters.cyan()
+                        colors::cyan(&reference.result.command_with_unused_parameters)
                     );
 
                     // All absolute numbers use one unit (the one of the largest mean,
@@ -424,31 +425,31 @@ impl<'a> Scheduler<'a> {
                     for item in others {
                         let absolute = absolute_difference(reference.result, item.result, unit);
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
-                            format!(" ± {}", format!("{stddev:.2}").green())
+                            format!(" ± {}", colors::green(format!("{stddev:.2}")))
                         } else {
                             "".into()
                         };
                         let comparator = match item.relative_ordering {
                             Ordering::Less => format!(
                                 "{}{} times slower than",
-                                format!("{:8.2}", item.relative_speed).bold().green(),
+                                colors::green(format!("{:8.2}", item.relative_speed)).bold(),
                                 stddev
                             ),
                             Ordering::Greater => format!(
                                 "{}{} times faster than",
-                                format!("{:8.2}", item.relative_speed).bold().green(),
+                                colors::green(format!("{:8.2}", item.relative_speed)).bold(),
                                 stddev
                             ),
                             Ordering::Equal => format!(
                                 "    As fast ({}{}) as",
-                                format!("{:.2}", item.relative_speed).bold().green(),
+                                colors::green(format!("{:.2}", item.relative_speed)).bold(),
                                 stddev
                             ),
                         };
                         println!(
                             "{} {} {}",
                             comparator,
-                            item.result.command_with_unused_parameters.magenta(),
+                            colors::magenta(&item.result.command_with_unused_parameters),
                             absolute.dimmed()
                         );
 
@@ -459,9 +460,9 @@ impl<'a> Scheduler<'a> {
                                 match crate::stats::deep::compare_samples(ref_times, item_times) {
                                     Some(cmp) => {
                                         let sig_str = if cmp.is_significant_01 {
-                                            "statistically significant (p < 0.01)".cyan()
+                                            colors::cyan("statistically significant (p < 0.01)")
                                         } else if cmp.is_significant_05 {
-                                            "statistically significant (p < 0.05)".cyan()
+                                            colors::cyan("statistically significant (p < 0.05)")
                                         } else {
                                             "no statistically significant difference (p ≥ 0.05)"
                                                 .dimmed()
@@ -513,7 +514,7 @@ impl<'a> Scheduler<'a> {
                         println!(
                             "{} (reference: {}){}",
                             "Relative speed comparison".bold(),
-                            ref_cmd.cyan(),
+                            colors::cyan(ref_cmd),
                             interrupted_suffix
                         );
                     } else {
@@ -534,7 +535,7 @@ impl<'a> Scheduler<'a> {
                         let stddev_suffix = if item.is_reference {
                             "        ".into()
                         } else if let Some(stddev) = item.relative_speed_stddev {
-                            format!(" ± {}", format!("{stddev:5.2}").green())
+                            format!(" ± {}", colors::green(format!("{stddev:5.2}")))
                         } else {
                             "        ".into()
                         };
@@ -567,7 +568,7 @@ impl<'a> Scheduler<'a> {
 
                         println!(
                             "  {}{}  {:<width$}{}",
-                            format!("{:10.2}", item.relative_speed).bold().green(),
+                            colors::green(format!("{:10.2}", item.relative_speed)).bold(),
                             stddev_suffix,
                             item.result.command_with_unused_parameters,
                             reference_annotation,
@@ -584,7 +585,7 @@ impl<'a> Scheduler<'a> {
                  Try to re-run the benchmark on a quiet system. If you did not do so already, try the \
                  --shell=none/-N option. If it does not help either, you command is most likely too fast \
                  to be accurately benchmarked by joulex.",
-                 "Note".bold().red()
+                 colors::red("Note").bold()
             );
         }
     }
