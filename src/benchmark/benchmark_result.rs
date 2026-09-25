@@ -108,6 +108,32 @@ pub struct BenchmarkResult {
     /// Number of planned runs if the benchmark was interrupted
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runs_planned: Option<u64>,
+
+    /// The first (cold) run, reported separately with `--first-run=separate`.
+    /// It is not part of any other field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_run: Option<FirstRun>,
+}
+
+/// The first (cold) run of a benchmark (`--first-run=separate`).
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FirstRun {
+    /// Wall-clock time in seconds
+    pub time: Second,
+    /// User and system time in seconds (not available for a warmup run)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user: Option<Second>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system: Option<Second>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub memory_usage_byte: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_joules: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// True if this was the first warmup run (`--warmup` was used)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub warmup: bool,
 }
 
 /// Percentiles of the run times, in seconds.

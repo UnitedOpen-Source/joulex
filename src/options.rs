@@ -117,6 +117,21 @@ impl Default for RunBounds {
     }
 }
 
+/// `--first-run`: how the first (cold) timing run of each command is treated
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FirstRunPolicy {
+    /// Part of the statistics (default)
+    #[default]
+    Include,
+
+    /// Reported on its own line (and in the JSON export) and excluded from
+    /// the statistics
+    Separate,
+
+    /// Silently excluded from the statistics, like an extra warmup run
+    Discard,
+}
+
 /// Benchmark execution schedule mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ScheduleMode {
@@ -214,6 +229,9 @@ pub struct Options {
     /// `--warmup auto`: warm up until the timings are stable
     pub warmup_auto: bool,
 
+    /// `--first-run`: how the first timing run is treated
+    pub first_run: FirstRunPolicy,
+
     /// Minimum benchmarking time
     pub min_benchmarking_time: Second,
 
@@ -299,6 +317,7 @@ impl Default for Options {
             run_bounds: RunBounds::default(),
             warmup_count: 0,
             warmup_auto: false,
+            first_run: FirstRunPolicy::default(),
             min_benchmarking_time: 3.0,
             command_failure_action: CmdFailureAction::RaiseError,
             reference_command: None,
@@ -347,6 +366,13 @@ impl Options {
         } else {
             options.warmup_count = param_to_u64("warmup")?.unwrap_or(options.warmup_count);
         }
+
+        options.first_run = match matches.get_one::<String>("first-run").map(String::as_str) {
+            Some("separate") => FirstRunPolicy::Separate,
+            Some("discard") => FirstRunPolicy::Discard,
+            // clap only accepts the values above and "include"
+            _ => FirstRunPolicy::Include,
+        };
 
         let mut min_runs = param_to_u64("min-runs")?;
         let mut max_runs = param_to_u64("max-runs")?;

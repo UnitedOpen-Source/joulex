@@ -10,7 +10,7 @@ use crate::benchmark::executor::BenchmarkIteration;
 use crate::command::Command;
 use crate::energy::{get_energy_sampler, EnergySampler};
 use crate::options::{
-    CmdFailureAction, CommandOutputPolicy, ExecutorKind, Options, OutputStyleOption,
+    CmdFailureAction, CommandOutputPolicy, ExecutorKind, FirstRunPolicy, Options, OutputStyleOption,
 };
 use crate::outlier_detection::{
     modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
@@ -22,7 +22,7 @@ use crate::stats::deep::compute_deep_stats;
 use crate::util::exit_code::extract_exit_code;
 use crate::util::min_max::{max, min};
 use crate::util::units::{format_bytes, Second};
-use benchmark_result::{BenchmarkResult, OmittedRun};
+use benchmark_result::{BenchmarkResult, FirstRun, OmittedRun};
 use timing_result::TimingResult;
 
 use crate::output::colors;
@@ -60,6 +60,8 @@ pub struct BenchmarkRunner<'a> {
     /// timings stabilized
     pub warmup: Option<WarmupSummary>,
     pub initial_total_time: f64,
+    /// `--first-run=separate` with warmup: wall-clock time of the first warmup run
+    pub cold_warmup_time: Option<Second>,
 }
 
 impl<'a> BenchmarkRunner<'a> {
@@ -125,6 +127,7 @@ impl<'a> BenchmarkRunner<'a> {
             count: 0,
             warmup: None,
             initial_total_time: 0.0,
+            cold_warmup_time: None,
         }
     }
 
@@ -223,6 +226,9 @@ impl<'a> BenchmarkRunner<'a> {
             self.output_policy,
         )?;
         let _ = self.run_conclusion(BenchmarkIteration::Warmup(iteration))?;
+        if iteration == 0 && self.options.first_run == FirstRunPolicy::Separate {
+            self.cold_warmup_time = Some(result.time_real);
+        }
         Ok(result.time_real)
     }
 
@@ -256,6 +262,53 @@ impl<'a> BenchmarkRunner<'a> {
             stable: false,
             spread: relative_spread(window),
         })
+    }
+
+    fn has_warmup(&self) -> bool {
+        self.options.warmup_auto || self.options.warmup_count > 0
+    }
+
+    /// Whether the first timing run is excluded from the statistics
+    /// (`--first-run=separate|discard`). With warmup, `separate` reports the
+    /// first warmup run instead, so no timing run is excluded.
+    fn excludes_first_timing_run(&self) -> bool {
+        match self.options.first_run {
+            FirstRunPolicy::Include => false,
+            FirstRunPolicy::Separate => !self.has_warmup(),
+            FirstRunPolicy::Discard => true,
+        }
+    }
+
+    /// Number of runs to perform in addition to the requested ones, so that
+    /// the requested number is still measured when the first one is excluded.
+    pub fn extra_runs(&self) -> u64 {
+        u64::from(self.excludes_first_timing_run())
+    }
+
+    /// `--first-run`: remove the first timing run from the per-run vectors and
+    /// return it (or, with warmup, the first warmup run) for `separate`.
+    /// A benchmark with a single run keeps it (e.g. after a Ctrl-C).
+    fn take_first_run(&mut self) -> Option<FirstRun> {
+        if self.excludes_first_timing_run() && self.times_real.len() > 1 {
+            let run = FirstRun {
+                time: self.times_real[0],
+                user: Some(self.times_user[0]),
+                system: Some(self.times_system[0]),
+                memory_usage_byte: Some(self.memory_usage_byte[0]),
+                energy_joules: self.energy_measurements.first().copied().flatten(),
+                exit_code: self.exit_codes[0],
+                warmup: false,
+            };
+            let keep: Vec<usize> = (1..self.times_real.len()).collect();
+            self.retain_runs(&keep);
+            (self.options.first_run == FirstRunPolicy::Separate).then_some(run)
+        } else {
+            self.cold_warmup_time.map(|time| FirstRun {
+                time,
+                warmup: true,
+                ..Default::default()
+            })
+        }
     }
 
     pub fn run_initial_measurement(&mut self) -> Result<()> {
@@ -301,7 +354,7 @@ impl<'a> BenchmarkRunner<'a> {
             cmp::max(count, 1)
         };
 
-        self.count = count;
+        self.count = count + self.extra_runs();
 
         self.times_real.push(res.time_real);
         self.times_user.push(res.time_user);
@@ -388,6 +441,8 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+        let first_run_excluded = self.excludes_first_timing_run() && self.times_real.len() > 1;
+        let first_run = self.take_first_run();
         let original_run_count = self.times_real.len();
         let mut omitted_failed_runs = Vec::new();
 
@@ -452,6 +507,12 @@ impl<'a> BenchmarkRunner<'a> {
         let median_str = format_duration(t_median, Some(time_unit));
         let max_str = format_duration(t_max, Some(time_unit));
         let mut excluded = Vec::new();
+        if first_run_excluded {
+            excluded.push(match self.options.first_run {
+                FirstRunPolicy::Discard => "first run discarded".to_string(),
+                _ => "+1 cold".to_string(),
+            });
+        }
         if num_omitted_failed_runs > 0 {
             excluded.push(format!("{num_omitted_failed_runs} failed runs omitted"));
         }
@@ -490,19 +551,17 @@ impl<'a> BenchmarkRunner<'a> {
             String::new()
         };
 
-        let is_interrupted = crate::util::interrupt::interrupted() && t_num < self.count as usize;
-        let runs_planned = if is_interrupted {
-            Some(self.count)
-        } else {
-            None
-        };
+        // Runs performed and planned, not counting an excluded first run
+        let runs_done = original_run_count;
+        let planned = self.count - self.extra_runs();
+        let is_interrupted = crate::util::interrupt::interrupted() && (runs_done as u64) < planned;
+        let runs_planned = if is_interrupted { Some(planned) } else { None };
 
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
                 let suffix = if is_interrupted {
                     colors::yellow(format!(
-                        "  (interrupted after {t_num} of {} runs)",
-                        self.count
+                        "  (interrupted after {runs_done} of {planned} runs)"
                     ))
                     .to_string()
                 } else {
@@ -518,10 +577,30 @@ impl<'a> BenchmarkRunner<'a> {
             } else if is_interrupted {
                 println!(
                     "  {}",
-                    colors::yellow(format!(
-                        "(interrupted after {t_num} of {} runs)",
-                        self.count
-                    ))
+                    colors::yellow(format!("(interrupted after {runs_done} of {planned} runs)"))
+                );
+            }
+
+            if let Some(cold) = &first_run {
+                // Aligned with the columns of the "Time" line below
+                let details = match (cold.user, cold.system) {
+                    (Some(user), Some(system)) => format!(
+                        "{:15}[User: {}, System: {}]",
+                        "",
+                        colors::blue(format_duration(user, Some(time_unit))),
+                        colors::blue(format_duration(system, Some(time_unit)))
+                    ),
+                    _ => String::new(),
+                };
+                println!(
+                    "  {:<21}{:>8}{}",
+                    if cold.warmup {
+                        "Cold (warmup 1):"
+                    } else {
+                        "Cold (1st run):"
+                    },
+                    colors::yellow(format_duration(cold.time, Some(time_unit))).bold(),
+                    details
                 );
             }
 
@@ -796,6 +875,7 @@ impl<'a> BenchmarkRunner<'a> {
             discarded_outliers,
             resources,
             runs_planned,
+            first_run,
         })
     }
 }

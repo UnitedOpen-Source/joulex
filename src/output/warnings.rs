@@ -37,7 +37,8 @@ impl fmt::Display for Warnings {
                 f,
                 "The first benchmarking run for this command was significantly slower than the \
                  rest ({time}). This could be caused by (filesystem) caches that were not filled until \
-                 after the first run. {hints}",
+                 after the first run. {hints} To report the cold first run on its own line \
+                 instead of including it in the statistics, use '--first-run=separate'.",
                 time=format_duration(time_first_run, None),
                 hints=match (options.warmup_in_use, options.prepare_in_use) {
                     (true, true) => "You are already using both the '--warmup' option as well \

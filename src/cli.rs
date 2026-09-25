@@ -657,6 +657,31 @@ pub fn build_command() -> Command {
                        shell unless '--shell=none' is used."),
         )
         .arg(
+            Arg::new("first-run")
+                .long("first-run")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .value_parser(["include", "separate", "discard"])
+                .default_value("include")
+                .help("How to treat the first (cold) timing run of each command: 'include' it in \
+                       the statistics (default), report it 'separate'ly and exclude it, or \
+                       'discard' it silently. With 'separate' and 'discard', one extra run is \
+                       performed so that the requested number of runs is still measured.")
+                .long_help("How to treat the first (cold) timing run of each command. The first run \
+                       often includes one-time costs (page cache, lazy loading, JIT compilation), \
+                       which is exactly what you want to measure for a CLI's cold start, but \
+                       distorts the warm statistics.\n\n\
+                       'include' (default): the first run is part of the statistics.\n\
+                       'separate': the first run is shown on its own line ('Cold (1st run)') and \
+                       exported as 'first_run' in the JSON, and excluded from all statistics.\n\
+                       'discard': the first run is excluded silently, like an extra warmup run.\n\n\
+                       With 'separate' and 'discard', one extra run is performed so that the \
+                       requested number of runs is still measured. If '--warmup' is used with \
+                       'separate', the first warmup run is the cold one: it is reported \
+                       (wall-clock time only) and no timing run is excluded.\n\n\
+                       Example:  joulex --first-run=separate 'node app.js'"),
+        )
+        .arg(
             Arg::new("discard-outliers")
                 .long("discard-outliers")
                 .action(ArgAction::Set)

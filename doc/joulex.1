@@ -183,6 +183,10 @@ Import timing results from a JSON file previously exported by joulex or hyperfin
 .IP
 Perform \fINUM\fP warmup runs before the actual benchmark to fill caches.
 .HP
+\fB\-\-first\-run\fR \fIMODE\fP
+.IP
+How to treat the first (cold) timing run of each command: \fIinclude\fP it in the statistics (default), report it \fIseparate\fPly on a "Cold (1st run)" line and as "first_run" in the JSON export and exclude it from the statistics, or \fIdiscard\fP it silently. With \fIseparate\fP and \fIdiscard\fP, one extra run is performed so that the requested number of runs is still measured. With \fB\-\-warmup\fR, \fIseparate\fP reports the first warmup run (wall-clock time only) and excludes no timing run.
+.HP
 \fB\-m\fR, \fB\-\-min\-runs\fR \fINUM\fP
 .IP
 Perform at least \fINUM\fP runs for each command. Default: 10.
