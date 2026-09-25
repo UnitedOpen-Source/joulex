@@ -77,3 +77,8 @@ pub enum OptionsError<'a> {
 #[derive(Debug, Error)]
 #[error("Benchmark interrupted by user")]
 pub struct Interrupted;
+
+/// `--check-system=strict` found a problem (exit code 4)
+#[derive(Debug, Error)]
+#[error("The system check did not pass ('--check-system=strict'); fix the problems above, or use '--check-system' to only report them")]
+pub struct SystemCheckFailed;

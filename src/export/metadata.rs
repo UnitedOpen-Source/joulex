@@ -24,6 +24,12 @@ pub struct SystemInfo {
     pub os: &'static str,
     pub arch: &'static str,
     pub cpus: usize,
+    /// CPU model name, if it can be determined
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_model: Option<String>,
+    /// Kernel / OS release (e.g. "6.8.0-45-generic", "24.1.0")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kernel: Option<String>,
 }
 
 impl ExportMetadata {
@@ -43,8 +49,78 @@ impl ExportMetadata {
                 cpus: std::thread::available_parallelism()
                     .map(|n| n.get())
                     .unwrap_or(1),
+                cpu_model: cpu_model(),
+                kernel: kernel_release(),
             },
         }
+    }
+}
+
+/// The CPU model, e.g. "Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz" or "Apple M2".
+fn cpu_model() -> Option<String> {
+    #[cfg(target_os = "linux")]
+    {
+        let cpuinfo = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+        cpuinfo
+            .lines()
+            .filter_map(|line| line.split_once(':'))
+            .find(|(key, _)| matches!(key.trim(), "model name" | "Model" | "Hardware"))
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|model| !model.is_empty())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        sysctl_string(c"machdep.cpu.brand_string")
+    }
+    #[cfg(windows)]
+    {
+        std::env::var("PROCESSOR_IDENTIFIER").ok()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+    {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn sysctl_string(name: &std::ffi::CStr) -> Option<String> {
+    let mut buf = [0u8; 256];
+    let mut len = buf.len();
+    // SAFETY: `name` is NUL-terminated; `buf` has room for `len` bytes, and
+    // sysctlbyname writes at most that many and updates `len`.
+    let ret = unsafe {
+        libc::sysctlbyname(
+            name.as_ptr(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ret != 0 {
+        return None;
+    }
+    let value = std::ffi::CStr::from_bytes_until_nul(&buf[..len.min(buf.len())]).ok()?;
+    Some(value.to_string_lossy().trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// The kernel release from `uname`, on Unix.
+fn kernel_release() -> Option<String> {
+    #[cfg(unix)]
+    {
+        // SAFETY: an all-zero utsname is valid, and uname fills it in.
+        let mut name: libc::utsname = unsafe { std::mem::zeroed() };
+        // SAFETY: `name` is a valid, writable utsname.
+        if unsafe { libc::uname(&mut name) } != 0 {
+            return None;
+        }
+        // SAFETY: uname NUL-terminates the fields.
+        let release = unsafe { std::ffi::CStr::from_ptr(name.release.as_ptr()) };
+        Some(release.to_string_lossy().into_owned())
+    }
+    #[cfg(not(unix))]
+    {
+        None
     }
 }
 

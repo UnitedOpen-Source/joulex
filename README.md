@@ -181,6 +181,30 @@ like `--warmup`, `--prepare <cmd>`, `--setup <cmd>` or `--cleanup <cmd>`:
 
 ![](doc/execution-order.png)
 
+### Reducing noise
+
+Most "noisy" or irreproducible results come from the environment, not from the
+benchmarked command. `joulex --check-system` reports the usual suspects before
+benchmarking, with a hint for each problem (`--check-system=strict` aborts with
+exit code 4, e.g. on a CI benchmark runner):
+
+```
+System check:
+  ✖ CPU governor     powersave on 8 CPUs  → sudo cpupower frequency-set -g performance
+  ✖ Turbo boost      enabled  → echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo
+  ✔ Load average     0.21 (8 CPUs)
+  ! Power source     battery  → connect the power adapter (on battery, CPUs are often clocked down)
+  ✔ Thermal          max 48 °C
+```
+
+Other things that help:
+
+- **Fixed CPU frequency:** use the `performance` governor, and disable turbo boost (see above).
+- **Pinning and priority:** `--affinity 2` keeps the command on one core, avoiding migrations and P-/E-core mixes; `--priority high` or `realtime` reduces preemption.
+- **Caches:** `--warmup N` (or `--warmup auto`) fills them. `--prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches'` empties them before every run, for cold-cache benchmarks. `--first-run=separate` reports the cold first run on its own.
+- **Drift:** `--schedule round-robin` interleaves the commands, so slow drifts (thermal throttling, background jobs) affect all of them equally. joulex warns about trends, multimodal distributions and outlier-inflated variance.
+- **Shell overhead:** for very fast commands, `-N`/`--shell=none` avoids the intermediate shell.
+
 ## Installation
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/hyperfine.svg?columns=3&exclude_unsupported=1)](https://repology.org/project/hyperfine/versions)
