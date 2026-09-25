@@ -19,8 +19,13 @@ pub fn t_975(df: usize) -> f64 {
 }
 
 /// Half-width of the 95% confidence interval of the mean, relative to the
-/// mean (0.01 = ±1%). `None` for fewer than 2 values or a mean ≤ 0.
-pub fn relative_ci_half_width(xs: &[f64]) -> Option<f64> {
+/// mean (0.01 = ±1%), accounting for the uncertainty of a subtracted baseline
+/// (`--subtract`) if present. `None` for fewer than 2 values or a mean ≤ 0.
+pub fn relative_ci_half_width_with_baseline(
+    xs: &[f64],
+    baseline_stddev: Option<f64>,
+    baseline_runs: usize,
+) -> Option<f64> {
     let n = xs.len();
     if n < 2 {
         return None;
@@ -29,14 +34,48 @@ pub fn relative_ci_half_width(xs: &[f64]) -> Option<f64> {
     if mean.is_nan() || mean <= 0.0 {
         return None;
     }
-    // Exactly 0 for constant samples (the rounding of the mean would
-    // otherwise leave a variance of ~1e-33)
-    if xs.iter().all(|&x| x == xs[0]) {
+    let is_constant = xs.iter().all(|&x| x == xs[0]);
+    let se_sq_cmd = if is_constant {
+        0.0
+    } else {
+        let variance = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        variance / n as f64
+    };
+
+    let (se_sq_base, n_base) = match (baseline_stddev, baseline_runs) {
+        (Some(sd), runs) if runs > 0 && sd > 0.0 => (sd.powi(2) / runs as f64, runs),
+        _ => (0.0, 0),
+    };
+
+    if se_sq_cmd == 0.0 && se_sq_base == 0.0 {
         return Some(0.0);
     }
-    let variance = xs.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
-    let standard_error = (variance / n as f64).sqrt();
-    Some(t_975(n - 1) * standard_error / mean)
+
+    let combined_se = (se_sq_cmd + se_sq_base).sqrt();
+
+    let df = if se_sq_base == 0.0 {
+        n - 1
+    } else if se_sq_cmd == 0.0 {
+        n_base.saturating_sub(1).max(1)
+    } else {
+        let num = (se_sq_cmd + se_sq_base).powi(2);
+        let den = (se_sq_cmd.powi(2) / (n - 1) as f64)
+            + (se_sq_base.powi(2) / (n_base - 1).max(1) as f64);
+        if den > 0.0 {
+            (num / den).round() as usize
+        } else {
+            n - 1
+        }
+        .max(1)
+    };
+
+    Some(t_975(df) * combined_se / mean)
+}
+
+/// Half-width of the 95% confidence interval of the mean, relative to the
+/// mean (0.01 = ±1%). `None` for fewer than 2 values or a mean ≤ 0.
+pub fn relative_ci_half_width(xs: &[f64]) -> Option<f64> {
+    relative_ci_half_width_with_baseline(xs, None, 0)
 }
 
 #[cfg(test)]
@@ -68,5 +107,25 @@ mod tests {
             .map(|i| if i % 2 == 0 { 9.0 } else { 11.0 })
             .collect();
         assert!(relative_ci_half_width(&many).unwrap() < 0.021);
+    }
+
+    #[test]
+    fn half_width_with_baseline() {
+        let xs = [9.0, 11.0, 9.0, 11.0];
+        let without_base = relative_ci_half_width(&xs).unwrap();
+        // With a noisy baseline (sd 1.0, 4 runs), the confidence interval is wider
+        let with_base = relative_ci_half_width_with_baseline(&xs, Some(1.0), 4).unwrap();
+        assert!(with_base > without_base);
+
+        // Constant runs with zero baseline variance is exactly 0
+        assert_eq!(
+            relative_ci_half_width_with_baseline(&[2.0, 2.0], Some(0.0), 5),
+            Some(0.0)
+        );
+
+        // Constant runs with noisy baseline has non-zero uncertainty
+        let const_with_noise =
+            relative_ci_half_width_with_baseline(&[10.0, 10.0, 10.0], Some(1.0), 4).unwrap();
+        assert!(const_with_noise > 0.0);
     }
 }

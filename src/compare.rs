@@ -87,14 +87,33 @@ pub fn compare<'a>(
 }
 
 /// Two-sided p-value of the difference in mean run time (bootstrap Welch
-/// test). Two constant samples with different means are certainly different.
+/// test, accounting for any subtracted baseline uncertainty). Two constant
+/// samples with different means and no baseline uncertainty are certainly different.
 fn p_value(baseline: &BenchmarkResult, current: &BenchmarkResult) -> Option<f64> {
     let (a, b) = (baseline.times.as_deref()?, current.times.as_deref()?);
-    if let Some(stats) = crate::stats::deep::compare_samples(a, b) {
+    let var_base_a = baseline
+        .baseline
+        .as_ref()
+        .and_then(|sub| sub.stddev.map(|sd| sd.powi(2) / sub.runs.max(1) as f64))
+        .unwrap_or(0.0);
+    let var_base_b = current
+        .baseline
+        .as_ref()
+        .and_then(|sub| sub.stddev.map(|sd| sd.powi(2) / sub.runs.max(1) as f64))
+        .unwrap_or(0.0);
+
+    if var_base_a > 0.0 || var_base_b > 0.0 {
+        if let Some(stats) =
+            crate::stats::deep::compare_samples_with_baseline_variance(a, b, var_base_a, var_base_b)
+        {
+            return Some(stats.p_value);
+        }
+    } else if let Some(stats) = crate::stats::deep::compare_samples(a, b) {
         return Some(stats.p_value);
     }
     let constant = |xs: &[f64]| xs.len() >= 3 && xs.iter().all(|&x| x == xs[0]);
-    (constant(a) && constant(b) && a[0] != b[0]).then_some(0.0)
+    (var_base_a == 0.0 && var_base_b == 0.0 && constant(a) && constant(b) && a[0] != b[0])
+        .then_some(0.0)
 }
 
 /// Parse `--fail-if-regressed`: "5%", "5" or "0.5%" → 0.05, 0.05, 0.005.

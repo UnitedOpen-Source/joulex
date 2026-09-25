@@ -162,6 +162,13 @@ pub struct Baseline {
     /// (clamped to 0)
     #[serde(default, skip_serializing_if = "is_zero")]
     pub clamped_runs: usize,
+    /// Combined standard error of the net mean:
+    /// sqrt(cmd_stderr^2 + base_stderr^2) = sqrt(var_cmd / n_cmd + var_base / n_base)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub net_mean_stderr: Option<Second>,
+    /// Mean energy consumed by the baseline in Joules (when --energy is active)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub energy_joules: Option<f64>,
 }
 
 fn is_zero(n: &usize) -> bool {

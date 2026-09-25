@@ -489,10 +489,10 @@ pub fn build_command() -> Command {
                 .value_name("CMD")
                 .value_hint(ValueHint::CommandString)
                 .help("Measure CMD first (with the same warmup and number of runs) and subtract \
-                       its mean wall-clock, user and system time from every run of the \
-                       benchmarked commands, to measure a delta: e.g. \
+                       its mean wall-clock, user, system time (and energy when '--energy' is used) \
+                       from every run of the benchmarked commands, to measure a delta: e.g. \
                        --subtract \"python -c ''\" 'python -c \"import numpy\"'. Runs faster \
-                       than the baseline count as 0, with a warning. Energy is not subtracted."),
+                       than the baseline count as 0, with a warning."),
         )
         .arg(
             Arg::new("target-precision")

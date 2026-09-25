@@ -557,7 +557,28 @@ impl<'a> Scheduler<'a> {
                             if let (Some(ref_times), Some(item_times)) =
                                 (&reference.result.times, &item.result.times)
                             {
-                                match crate::stats::deep::compare_samples(ref_times, item_times) {
+                                let var_base_ref = reference
+                                    .result
+                                    .baseline
+                                    .as_ref()
+                                    .and_then(|sub| {
+                                        sub.stddev.map(|sd| sd.powi(2) / sub.runs.max(1) as f64)
+                                    })
+                                    .unwrap_or(0.0);
+                                let var_base_item = item
+                                    .result
+                                    .baseline
+                                    .as_ref()
+                                    .and_then(|sub| {
+                                        sub.stddev.map(|sd| sd.powi(2) / sub.runs.max(1) as f64)
+                                    })
+                                    .unwrap_or(0.0);
+                                match crate::stats::deep::compare_samples_with_baseline_variance(
+                                    ref_times,
+                                    item_times,
+                                    var_base_ref,
+                                    var_base_item,
+                                ) {
                                     Some(cmp) => {
                                         let sig_str = if cmp.is_significant_01 {
                                             colors::cyan("statistically significant (p < 0.01)")

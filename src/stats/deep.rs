@@ -55,12 +55,20 @@ fn confidence_interval(mut distribution: Vec<f64>) -> (f64, f64) {
     )
 }
 
-/// Welch's t statistic (sample variances, n - 1).
-fn welch_t(a: &[f64], b: &[f64]) -> f64 {
+/// Welch's t statistic (sample variances, n - 1), incorporating optional baseline
+/// mean variances from `--subtract`.
+fn welch_t_with_variance(a: &[f64], b: &[f64], var_base_a: f64, var_base_b: f64) -> f64 {
     let (mean_a, mean_b) = (mean(a), mean(b));
     let var_a = standard_deviation(a, Some(mean_a)).powi(2);
     let var_b = standard_deviation(b, Some(mean_b)).powi(2);
-    (mean_a - mean_b) / (var_a / a.len() as f64 + var_b / b.len() as f64).sqrt()
+    let se_sq = var_a / a.len() as f64 + var_base_a + var_b / b.len() as f64 + var_base_b;
+    (mean_a - mean_b) / se_sq.sqrt()
+}
+
+/// Welch's t statistic (sample variances, n - 1).
+#[cfg(test)]
+fn welch_t(a: &[f64], b: &[f64]) -> f64 {
+    welch_t_with_variance(a, b, 0.0, 0.0)
 }
 
 /// Two-tailed p-value of `t` in the null distribution (the same definition as
@@ -105,13 +113,19 @@ pub fn compute_deep_stats(data: &[f64]) -> Option<DeepStats> {
     })
 }
 
-/// Perform a two-sample bootstrap hypothesis test comparing sample `a` and sample `b`
-pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
+/// Perform a two-sample bootstrap hypothesis test comparing sample `a` and sample `b`,
+/// incorporating optional baseline mean variances from `--subtract`.
+pub fn compare_samples_with_baseline_variance(
+    a: &[f64],
+    b: &[f64],
+    var_base_a: f64,
+    var_base_b: f64,
+) -> Option<ComparisonStats> {
     if a.len() < 3 || b.len() < 3 {
         return None;
     }
 
-    let t_stat = welch_t(a, b);
+    let t_stat = welch_t_with_variance(a, b, var_base_a, var_base_b);
     if !t_stat.is_finite() {
         // Zero variance in both samples:
         // If means are equal, the samples are identical -> p = 1.0, no difference
@@ -137,7 +151,7 @@ pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
         .map(|_| {
             resample_into(&mut rng, &pooled, a.len(), &mut resample_a);
             resample_into(&mut rng, &pooled, b.len(), &mut resample_b);
-            welch_t(&resample_a, &resample_b)
+            welch_t_with_variance(&resample_a, &resample_b, var_base_a, var_base_b)
         })
         .collect();
     let p_val = two_tailed_p_value(&distribution, t_stat);
@@ -152,6 +166,11 @@ pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
         is_significant_05: p_val < 0.05,
         is_significant_01: p_val < 0.01,
     })
+}
+
+/// Perform a two-sample bootstrap hypothesis test comparing sample `a` and sample `b`
+pub fn compare_samples(a: &[f64], b: &[f64]) -> Option<ComparisonStats> {
+    compare_samples_with_baseline_variance(a, b, 0.0, 0.0)
 }
 
 #[cfg(test)]
@@ -245,5 +264,16 @@ mod tests {
         let b = vec![0.101, 0.099, 0.100, 0.102, 0.100, 0.098, 0.101, 0.100];
         let cmp = compare_samples(&a, &b).unwrap();
         assert!(!cmp.is_significant_05, "{cmp:?}");
+    }
+
+    #[test]
+    fn test_baseline_variance_increases_p_value() {
+        let a = vec![0.100, 0.102, 0.101, 0.103, 0.100];
+        let b = vec![0.105, 0.107, 0.106, 0.108, 0.105];
+        let without_base = compare_samples(&a, &b).unwrap();
+        // With a noisy baseline subtracted, the difference is less certain
+        let with_base = compare_samples_with_baseline_variance(&a, &b, 0.0001, 0.0001).unwrap();
+        assert!(with_base.p_value >= without_base.p_value);
+        assert!(with_base.t_statistic.abs() < without_base.t_statistic.abs());
     }
 }
