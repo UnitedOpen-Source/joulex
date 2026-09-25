@@ -72,11 +72,13 @@ fn discard(output: ChildStdout) {
 pub fn execute_and_measure(
     mut command: Command,
     affinity: Option<&[usize]>,
+    priority: crate::util::priority::Priority,
 ) -> Result<TimerResult> {
     // On Linux the affinity is applied by the caller (pre_exec); on other
-    // Unix systems --affinity is rejected during option validation.
+    // Unix systems --affinity is rejected during option validation. The
+    // priority is also applied by the caller (pre_exec) on Unix.
     #[cfg(not(windows))]
-    let _ = affinity;
+    let _ = (affinity, priority);
 
     #[cfg(windows)]
     {
@@ -92,6 +94,11 @@ pub fn execute_and_measure(
     #[cfg(windows)]
     if let Some(cpus) = affinity {
         self::windows_timer::set_affinity(&child, crate::util::affinity::windows_mask(cpus))?;
+    }
+
+    #[cfg(windows)]
+    if let Some(class) = crate::util::priority::windows_priority_class(priority) {
+        self::windows_timer::set_priority_class(&child, class)?;
     }
 
     #[cfg(windows)]

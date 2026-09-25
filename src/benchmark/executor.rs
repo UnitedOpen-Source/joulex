@@ -8,6 +8,7 @@ use crate::options::{
 };
 use crate::output::progress_bar::get_progress_bar;
 use crate::timer::{execute_and_measure, TimerResult};
+use crate::util::priority::Priority;
 use crate::util::randomized_environment_offset;
 use crate::util::units::Second;
 
@@ -55,6 +56,24 @@ pub trait Executor {
     fn time_overhead(&self) -> Second;
 }
 
+/// How every benchmarked (and intermediate) process is started
+#[derive(Clone, Copy)]
+struct ProcessSettings<'a> {
+    /// --affinity
+    affinity: Option<&'a [usize]>,
+    /// --priority
+    priority: Priority,
+}
+
+impl<'a> ProcessSettings<'a> {
+    fn from_options(options: &'a Options) -> Self {
+        ProcessSettings {
+            affinity: options.affinity.as_deref(),
+            priority: options.priority,
+        }
+    }
+}
+
 fn run_command_and_measure_common(
     mut command: std::process::Command,
     iteration: BenchmarkIteration,
@@ -62,8 +81,9 @@ fn run_command_and_measure_common(
     command_input_policy: &CommandInputPolicy,
     command_output_policy: &CommandOutputPolicy,
     command_name: &str,
-    affinity: Option<&[usize]>,
+    process: ProcessSettings,
 ) -> Result<TimerResult> {
+    let ProcessSettings { affinity, priority } = process;
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
     command.stdin(stdin).stdout(stdout).stderr(stderr);
@@ -83,8 +103,25 @@ fn run_command_and_measure_common(
         crate::util::affinity::apply(&mut command, cpus);
     }
 
+    #[cfg(unix)]
+    crate::util::priority::apply(&mut command, priority);
+
     let interrupted_before = crate::util::interrupt::interrupted();
-    let result = execute_and_measure(command, affinity)
+    let result = execute_and_measure(command, affinity, priority)
+        .map_err(|error| {
+            // A priority that needs privileges fails in the child: explain how
+            // to get them
+            let denied = error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
+            match crate::util::priority::permission_hint(priority) {
+                Some(hint) if denied => error.context(format!(
+                    "could not set '--priority {}': {hint}",
+                    priority.as_str()
+                )),
+                _ => error,
+            }
+        })
         .with_context(|| format!("Failed to run command '{command_name}'"))?;
 
     // If an interruption occurred while running the command, discard the run
@@ -163,7 +200,7 @@ impl Executor for RawExecutor<'_> {
             &self.options.command_input_policy,
             output_policy,
             &command.get_command_line(),
-            self.options.affinity.as_deref(),
+            ProcessSettings::from_options(self.options),
         )?;
 
         Ok((
@@ -253,7 +290,7 @@ impl Executor for ShellExecutor<'_> {
             &self.options.command_input_policy,
             output_policy,
             &command.get_command_line(),
-            self.options.affinity.as_deref(),
+            ProcessSettings::from_options(self.options),
         )?;
 
         // Subtract shell spawning time
@@ -303,16 +340,17 @@ impl Executor for ShellExecutor<'_> {
             );
 
             match res {
-                Err(_) => {
+                Err(error) => {
                     let shell_cmd = if cfg!(windows) {
                         format!("{} /C \"\"", self.shell)
                     } else {
                         format!("{} -c \"\"", self.shell)
                     };
 
-                    bail!(
-                        "Could not measure shell execution time. Make sure you can run '{shell_cmd}'."
-                    );
+                    // Keep the cause (e.g. a '--priority' permission error)
+                    return Err(error.context(format!(
+                        "Could not measure the shell execution time (make sure you can run '{shell_cmd}')"
+                    )));
                 }
                 Ok((r, _)) => {
                     times_real.push(r.time_real);

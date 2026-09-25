@@ -647,6 +647,31 @@ pub fn build_command() -> Command {
                        efficiency cores. Linux and Windows only."),
         )
         .arg(
+            Arg::new("priority")
+                .long("priority")
+                .action(ArgAction::Set)
+                .value_name("POLICY")
+                .value_parser(["normal", "high", "idle", "realtime"])
+                .help("Scheduling priority of every benchmarked command (and \
+                       --prepare/--conclude/--setup/--cleanup): 'high' and 'realtime' reduce \
+                       preemption by other processes, 'idle' benchmarks background workloads. \
+                       Default: normal (inherited).")
+                .long_help("Scheduling priority of every benchmarked command (and \
+                       --prepare/--conclude/--setup/--cleanup).\n\n\
+                       'normal' (default): inherit joulex's priority.\n\
+                       'high': nice -20 (Linux, macOS), HIGH_PRIORITY_CLASS (Windows).\n\
+                       'idle': SCHED_IDLE (Linux), nice 19 (macOS), IDLE_PRIORITY_CLASS (Windows).\n\
+                       'realtime': SCHED_FIFO at the maximum priority (Linux), \
+                       REALTIME_PRIORITY_CLASS (Windows). Not available on macOS.\n\n\
+                       'high' and 'realtime' need privileges: root or \
+                       'sudo setcap cap_sys_nice+ep \"$(command -v joulex)\"' on Linux, root on \
+                       macOS, administrator rights on Windows (otherwise 'realtime' silently \
+                       becomes 'high').\n\n\
+                       Warning: a 'realtime' command that never blocks can starve the rest of \
+                       the system, including joulex itself.\n\n\
+                       Example:  sudo joulex --priority=realtime './compute'"),
+        )
+        .arg(
             Arg::new("resource-usage")
                 .long("resource-usage")
                 .visible_alias("rusage")

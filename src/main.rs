@@ -86,6 +86,14 @@ fn run() -> Result<()> {
 
     options.validate_against_command_list(&commands)?;
 
+    if options.priority == util::priority::Priority::Realtime {
+        eprintln!(
+            "{} '--priority realtime': a benchmarked command that never blocks can starve the \
+             rest of the system, including joulex itself.",
+            output::colors::yellow("Warning:")
+        );
+    }
+
     let mut scheduler = Scheduler::new(&commands, &options, &export_manager);
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;

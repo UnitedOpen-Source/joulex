@@ -70,6 +70,8 @@ pub enum OptionsError<'a> {
 
     #[error("Invalid '--affinity': {0}")]
     InvalidAffinity(String),
+    #[error("Invalid '--priority': {0}")]
+    InvalidPriority(String),
 }
 
 #[derive(Debug, Error)]
