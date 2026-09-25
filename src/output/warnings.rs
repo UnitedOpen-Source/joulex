@@ -16,9 +16,23 @@ pub enum Warnings {
     SlowInitialRun(Second, OutlierWarningOptions),
     OutliersDetected(OutlierWarningOptions),
     OffCpuTime(Second, Second, f64),
-    FailedRunsOmitted { omitted: usize, total: usize },
-    TooManyOutliers { total: usize },
-    WarmupNotStable { runs: u64, spread: f64 },
+    FailedRunsOmitted {
+        omitted: usize,
+        total: usize,
+    },
+    TooManyOutliers {
+        total: usize,
+    },
+    WarmupNotStable {
+        runs: u64,
+        spread: f64,
+    },
+    /// Systematic drift of the run times: relative change, p-value
+    Trend(f64, f64),
+    /// Two or more clusters of run times: bimodality coefficient
+    Multimodal(f64),
+    /// Outliers cause most of the variance: fraction, number of outliers
+    InflatedVariance(f64, usize),
 }
 
 impl fmt::Display for Warnings {
@@ -105,7 +119,48 @@ impl fmt::Display for Warnings {
                 "Omitted {omitted} of {total} benchmark runs with non-zero exit codes from the \
                  summary statistics."
             ),
+            Warnings::Trend(rel_change, p_value) => write!(
+                f,
+                "The run times show a systematic {direction} trend ({rel_change:+.1}% from the \
+                 first to the last run, p {p}). This often indicates thermal throttling, a \
+                 background process, or state that builds up between runs (caches, files). \
+                 Consider cooling pauses, '--warmup', '--prepare' to reset the state, or \
+                 '--schedule round-robin' to spread the drift over all commands.",
+                direction = if rel_change > 0.0 { "upward" } else { "downward" },
+                rel_change = rel_change * 100.0,
+                p = format_p_value(p_value),
+            ),
+            Warnings::Multimodal(bimodality) => write!(
+                f,
+                "The run time distribution looks multimodal (bimodality coefficient \
+                 {bimodality:.2} > {:.3}, with separated groups of runs). The mean ± σ may be \
+                 misleading; inspect the individual run times ('--export-html', \
+                 '--export-markdown-runs'). Common causes are caching effects, CPU frequency \
+                 changes, P-/E-core migration, or a background job that starts mid-benchmark.",
+                crate::stats::diagnostics::BIMODALITY_THRESHOLD
+            ),
+            Warnings::InflatedVariance(fraction, count) => write!(
+                f,
+                "{:.0}% of the variance is caused by {count} {} ({}). Consider re-running this \
+                 benchmark on a quiet system, or excluding them with '--discard-outliers'.",
+                // Rounded down: 99.6% is not "100% of the variance"
+                (fraction * 100.0).floor(),
+                if count == 1 { "outlier" } else { "outliers" },
+                if fraction >= 0.9 {
+                    "severely inflated"
+                } else {
+                    "strongly inflated"
+                },
+            ),
         }
+    }
+}
+
+fn format_p_value(p: f64) -> String {
+    if p < 0.001 {
+        "< 0.001".to_string()
+    } else {
+        format!("= {p:.3}")
     }
 }
 

@@ -199,6 +199,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         warmup_runs: None,
         runs_planned: None,
         first_run: None,
+        diagnostics: None,
     }
 }
 
