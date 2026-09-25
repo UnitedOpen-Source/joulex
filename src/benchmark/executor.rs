@@ -71,6 +71,8 @@ struct ProcessSettings<'a> {
     priority: Priority,
     /// --timeout
     timeout: Option<std::time::Duration>,
+    /// --until
+    until: Option<&'a crate::options::UntilSettings>,
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -79,6 +81,7 @@ impl<'a> ProcessSettings<'a> {
             affinity: options.affinity.as_deref(),
             priority: options.priority,
             timeout: options.timeout,
+            until: options.until.as_ref(),
         }
     }
 }
@@ -96,9 +99,19 @@ fn run_command_and_measure_common(
         affinity,
         priority,
         timeout,
+        until,
     } = process;
+    let until = match iteration {
+        BenchmarkIteration::NonBenchmarkRun => None,
+        BenchmarkIteration::Warmup(_) | BenchmarkIteration::Benchmark(_) => until,
+    };
+
     let stdin = command_input_policy.get_stdin()?;
-    let (stdout, stderr) = command_output_policy.get_stdout_stderr()?;
+    let (stdout, stderr) = match until {
+        Some(u) if !u.match_stderr => (std::process::Stdio::piped(), std::process::Stdio::null()),
+        Some(_) => (std::process::Stdio::null(), std::process::Stdio::piped()),
+        None => command_output_policy.get_stdout_stderr()?,
+    };
     command.stdin(stdin).stdout(stdout).stderr(stderr);
 
     command.env(
@@ -121,7 +134,7 @@ fn run_command_and_measure_common(
 
     let interrupted_before = crate::util::interrupt::interrupted();
     let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
-    let result = execute_and_measure(command, affinity, priority, capture, timeout)
+    let result = execute_and_measure(command, affinity, priority, capture, timeout, until)
         .map_err(|error| {
             // A priority that needs privileges fails in the child: explain how
             // to get them
@@ -179,12 +192,16 @@ fn run_command_and_measure_common(
                 BenchmarkIteration::Benchmark(0) => "the first benchmark run".to_string(),
                 BenchmarkIteration::Benchmark(i) => format!("benchmark iteration {i}"),
             };
-            let cause = result
-                .status
-                .code()
-                .map_or("The process has been terminated by a signal".into(), |c| {
-                    format!("Command terminated with non-zero exit code {c}")
-                });
+            let cause = if result.until_matched == Some(false) {
+                "Command exited without matching '--until' pattern".to_string()
+            } else {
+                result
+                    .status
+                    .code()
+                    .map_or("The process has been terminated by a signal".into(), |c| {
+                        format!("Command terminated with non-zero exit code {c}")
+                    })
+            };
             match &result.captured {
                 Some(captured) => bail!(
                     "{cause} in {when}. Use the '-i'/'--ignore-exit-code' option if you want \

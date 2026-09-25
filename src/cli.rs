@@ -526,6 +526,24 @@ pub fn build_command() -> Command {
                        command are skipped."),
         )
         .arg(
+            Arg::new("until")
+                .long("until")
+                .visible_alias("ready-when")
+                .action(ArgAction::Set)
+                .value_name("TEXT")
+                .conflicts_with_all(["show-output", "show-output-on-failure", "output"])
+                .help("Stop the timer as soon as the command writes TEXT to stdout (or stderr \
+                       with --until-stderr), then terminate the process. A run that exits \
+                       without printing TEXT fails."),
+        )
+        .arg(
+            Arg::new("until-stderr")
+                .long("until-stderr")
+                .action(ArgAction::SetTrue)
+                .requires("until")
+                .help("Match the pattern specified by --until against stderr instead of stdout."),
+        )
+        .arg(
             Arg::new("precision")
                 .long("precision")
                 .action(ArgAction::Set)

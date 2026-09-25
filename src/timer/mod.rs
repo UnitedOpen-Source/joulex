@@ -16,6 +16,12 @@ use std::os::fd::AsFd;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::System::Threading::CREATE_SUSPENDED;
 
+#[cfg(not(windows))]
+use std::os::unix::process::ExitStatusExt;
+
+#[cfg(windows)]
+use std::os::windows::process::ExitStatusExt;
+
 use crate::util::units::Second;
 use wall_clock_timer::WallClockTimer;
 
@@ -41,6 +47,8 @@ pub struct TimerResult {
     pub captured: Option<CapturedOutput>,
     /// Whether the process timed out and was killed by the watchdog
     pub timed_out: bool,
+    /// Whether `--until` was active and matched the pattern
+    pub until_matched: Option<bool>,
 }
 
 #[cfg(windows)]
@@ -109,6 +117,38 @@ impl Watchdog {
     }
 }
 
+#[cfg(not(windows))]
+pub struct TerminateWatcher {
+    done: mpsc::Sender<()>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+#[cfg(not(windows))]
+impl TerminateWatcher {
+    pub fn arm(pid: u32, timeout: std::time::Duration) -> Self {
+        let (tx, rx) = mpsc::channel::<()>();
+        let handle = std::thread::spawn(move || {
+            if rx.recv_timeout(timeout).is_err() {
+                // SAFETY: plain syscall; negative pid targets the process group created via command.process_group(0).
+                unsafe {
+                    libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+                }
+            }
+        });
+        TerminateWatcher {
+            done: tx,
+            handle: Some(handle),
+        }
+    }
+
+    pub fn disarm(mut self) {
+        let _ = self.done.send(());
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 /// The last bytes of a run's stdout and stderr (`--show-output-on-failure`)
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CapturedOutput {
@@ -170,6 +210,29 @@ fn discard(output: ChildStdout) {
     }
 }
 
+/// Read from `out` until the `needle` byte pattern is found.
+/// Preserves the last `needle.len() - 1` bytes across chunk boundaries
+/// so matches split across reads are detected.
+pub fn read_until(mut out: impl Read, needle: &[u8]) -> std::io::Result<bool> {
+    if needle.is_empty() {
+        return Ok(true);
+    }
+    let mut buf = [0u8; 64 << 10];
+    let mut carry: Vec<u8> = Vec::new();
+    loop {
+        let n = out.read(&mut buf)?;
+        if n == 0 {
+            return Ok(false);
+        }
+        carry.extend_from_slice(&buf[..n]);
+        if carry.windows(needle.len()).any(|w| w == needle) {
+            return Ok(true);
+        }
+        let keep = (needle.len() - 1).min(carry.len());
+        carry.drain(..carry.len() - keep);
+    }
+}
+
 /// Execute the given command and return a timing summary
 pub fn execute_and_measure(
     mut command: Command,
@@ -177,6 +240,7 @@ pub fn execute_and_measure(
     priority: crate::util::priority::Priority,
     capture: bool,
     timeout: Option<std::time::Duration>,
+    until: Option<&crate::options::UntilSettings>,
 ) -> Result<TimerResult> {
     // On Linux the affinity is applied by the caller (pre_exec); on other
     // Unix systems --affinity is rejected during option validation. The
@@ -185,7 +249,7 @@ pub fn execute_and_measure(
     let _ = (affinity, priority);
 
     #[cfg(not(windows))]
-    if timeout.is_some() {
+    if timeout.is_some() || until.is_some() {
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
@@ -228,52 +292,160 @@ pub fn execute_and_measure(
         }
     });
 
-    // --show-output-on-failure: drain stderr on another thread while stdout
-    // is drained here, so that the child can't block on a full pipe
-    let stderr_tail = child
-        .stderr
-        .take()
-        .filter(|_| capture)
-        .map(|stderr| std::thread::spawn(move || read_tail(stderr, CAPTURE_LIMIT)));
-    let stdout_tail = match child.stdout.take() {
-        Some(stdout) if capture => Some(read_tail(stdout, CAPTURE_LIMIT)),
-        // CommandOutputPolicy::Pipe
-        Some(stdout) => {
-            discard(stdout);
-            None
+    let until_matched;
+    let time_real;
+    let timed_out;
+    let status;
+
+    #[cfg(not(windows))]
+    let (time_user, time_system, memory_usage_byte, counters);
+
+    #[cfg(windows)]
+    let (time_user, time_system, memory_usage_byte, counters);
+
+    let captured;
+
+    if let Some(until_settings) = until {
+        let matched = if !until_settings.match_stderr {
+            if let Some(mut stream) = child.stdout.take() {
+                read_until(&mut stream, &until_settings.pattern)?
+            } else {
+                false
+            }
+        } else if let Some(mut stream) = child.stderr.take() {
+            read_until(&mut stream, &until_settings.pattern)?
+        } else {
+            false
+        };
+
+        time_real = wallclock_timer.stop();
+
+        if matched {
+            #[cfg(not(windows))]
+            {
+                let pid = child.id();
+                // SAFETY: plain syscall; negative pid targets the process group created via command.process_group(0).
+                unsafe {
+                    libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
+                }
+                let fallback = TerminateWatcher::arm(pid, std::time::Duration::from_secs(2));
+                let (raw_status, usage) = self::unix_timer::wait_with_rusage(&child)?;
+                fallback.disarm();
+                let _ = raw_status;
+                time_user = usage.user;
+                time_system = usage.system;
+                memory_usage_byte = usage.max_rss_byte;
+                counters = Some(usage.counters);
+                status = ExitStatus::from_raw(0);
+            }
+            #[cfg(windows)]
+            {
+                // SAFETY: TerminateJobObject terminates all processes associated with the job object.
+                unsafe {
+                    windows_sys::Win32::System::JobObjects::TerminateJobObject(
+                        cpu_timer.raw_job_handle(),
+                        1,
+                    );
+                }
+                let _ = child.wait()?;
+                let (user, system, memory) = cpu_timer.stop();
+                time_user = user;
+                time_system = system;
+                memory_usage_byte = memory;
+                counters = None;
+                status = ExitStatus::from_raw(0);
+            }
+            timed_out = watchdog.is_some_and(|w| w.disarm());
+            until_matched = Some(true);
+        } else {
+            // Process closed pipe or exited without printing pattern
+            #[cfg(not(windows))]
+            {
+                let (raw_status, usage) = self::unix_timer::wait_with_rusage(&child)?;
+                time_user = usage.user;
+                time_system = usage.system;
+                memory_usage_byte = usage.max_rss_byte;
+                counters = Some(usage.counters);
+                timed_out = watchdog.is_some_and(|w| w.disarm());
+                status = if !timed_out && raw_status.success() {
+                    // Exited 0 without matching the required pattern -> mark as failure
+                    ExitStatus::from_raw(1 << 8)
+                } else {
+                    raw_status
+                };
+            }
+            #[cfg(windows)]
+            {
+                let raw_status = child.wait()?;
+                let (user, system, memory) = cpu_timer.stop();
+                time_user = user;
+                time_system = system;
+                memory_usage_byte = memory;
+                counters = None;
+                timed_out = watchdog.is_some_and(|w| w.disarm());
+                status = if !timed_out && raw_status.success() {
+                    // Exited 0 without matching the required pattern -> mark as failure
+                    ExitStatus::from_raw(1)
+                } else {
+                    raw_status
+                };
+            }
+            until_matched = Some(false);
         }
-        None => None,
-    };
+        captured = None;
+    } else {
+        // --show-output-on-failure: drain stderr on another thread while stdout
+        // is drained here, so that the child can't block on a full pipe
+        let stderr_tail = child
+            .stderr
+            .take()
+            .filter(|_| capture)
+            .map(|stderr| std::thread::spawn(move || read_tail(stderr, CAPTURE_LIMIT)));
+        let stdout_tail = match child.stdout.take() {
+            Some(stdout) if capture => Some(read_tail(stdout, CAPTURE_LIMIT)),
+            // CommandOutputPolicy::Pipe
+            Some(stdout) => {
+                discard(stdout);
+                None
+            }
+            None => None,
+        };
 
-    // On Unix, reap the child with wait4 to get the resource usage of exactly
-    // this process tree (see unix_timer::wait_with_rusage).
-    #[cfg(not(windows))]
-    let (status, usage) = self::unix_timer::wait_with_rusage(&child)?;
-    #[cfg(windows)]
-    let status = child.wait()?;
+        // On Unix, reap the child with wait4 to get the resource usage of exactly
+        // this process tree (see unix_timer::wait_with_rusage).
+        #[cfg(not(windows))]
+        let (raw_status, usage) = self::unix_timer::wait_with_rusage(&child)?;
+        #[cfg(windows)]
+        let raw_status = child.wait()?;
 
-    let time_real = wallclock_timer.stop();
-    let timed_out = watchdog.is_some_and(|w| w.disarm());
+        time_real = wallclock_timer.stop();
+        timed_out = watchdog.is_some_and(|w| w.disarm());
+        status = raw_status;
 
-    #[cfg(not(windows))]
-    let (time_user, time_system, memory_usage_byte, counters) = (
-        usage.user,
-        usage.system,
-        usage.max_rss_byte,
-        Some(usage.counters),
-    );
-    #[cfg(windows)]
-    let (time_user, time_system, memory_usage_byte, counters) = {
-        let (user, system, memory) = cpu_timer.stop();
-        (user, system, memory, None)
-    };
+        #[cfg(not(windows))]
+        {
+            time_user = usage.user;
+            time_system = usage.system;
+            memory_usage_byte = usage.max_rss_byte;
+            counters = Some(usage.counters);
+        }
+        #[cfg(windows)]
+        {
+            let (user, system, memory) = cpu_timer.stop();
+            time_user = user;
+            time_system = system;
+            memory_usage_byte = memory;
+            counters = None;
+        }
 
-    let captured = capture.then(|| CapturedOutput {
-        stdout: stdout_tail.unwrap_or_default(),
-        stderr: stderr_tail
-            .and_then(|thread| thread.join().ok())
-            .unwrap_or_default(),
-    });
+        captured = capture.then(|| CapturedOutput {
+            stdout: stdout_tail.unwrap_or_default(),
+            stderr: stderr_tail
+                .and_then(|thread| thread.join().ok())
+                .unwrap_or_default(),
+        });
+        until_matched = None;
+    }
 
     Ok(TimerResult {
         time_real,
@@ -284,13 +456,91 @@ pub fn execute_and_measure(
         status,
         captured,
         timed_out,
+        until_matched,
     })
 }
 
-#[test]
-fn read_tail_keeps_the_last_bytes() {
-    let data: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
-    assert_eq!(read_tail(&data[..], 1000), &data[data.len() - 1000..]);
-    assert_eq!(read_tail(&data[..10], 1000), &data[..10]);
-    assert!(read_tail(&[][..], 1000).is_empty());
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_tail_keeps_the_last_bytes() {
+        let data: Vec<u8> = (0..100_000u32).map(|i| (i % 251) as u8).collect();
+        assert_eq!(read_tail(&data[..], 1000), &data[data.len() - 1000..]);
+        assert_eq!(read_tail(&data[..10], 1000), &data[..10]);
+        assert!(read_tail(&[][..], 1000).is_empty());
+    }
+
+    struct ChunkReader<'a> {
+        chunks: Vec<&'a [u8]>,
+        index: usize,
+    }
+
+    impl<'a> Read for ChunkReader<'a> {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            if self.index >= self.chunks.len() {
+                return Ok(0);
+            }
+            let chunk = self.chunks[self.index];
+            self.index += 1;
+            let len = chunk.len().min(buf.len());
+            buf[..len].copy_from_slice(&chunk[..len]);
+            Ok(len)
+        }
+    }
+
+    #[test]
+    fn test_read_until_exact_match() {
+        let input = b"Hello world! Server is READY for connections.".as_slice();
+        assert!(read_until(input, b"READY").unwrap());
+    }
+
+    #[test]
+    fn test_read_until_split_across_reads() {
+        let reader = ChunkReader {
+            chunks: vec![b"Starting up system... REA", b"DY to serve"],
+            index: 0,
+        };
+        assert!(read_until(reader, b"READY").unwrap());
+
+        let reader2 = ChunkReader {
+            chunks: vec![b"abc R", b"EADY xyz"],
+            index: 0,
+        };
+        assert!(read_until(reader2, b"READY").unwrap());
+
+        let reader3 = ChunkReader {
+            chunks: vec![b"READ", b"Y!"],
+            index: 0,
+        };
+        assert!(read_until(reader3, b"READY").unwrap());
+    }
+
+    #[test]
+    fn test_read_until_not_found() {
+        let input = b"Starting up... initializing... done.".as_slice();
+        assert!(!read_until(input, b"READY").unwrap());
+    }
+
+    #[test]
+    fn test_read_until_empty_needle() {
+        let input = b"any data".as_slice();
+        assert!(read_until(input, b"").unwrap());
+    }
+
+    #[test]
+    fn test_read_until_empty_stream() {
+        let input = b"".as_slice();
+        assert!(!read_until(input, b"READY").unwrap());
+    }
+
+    #[test]
+    fn test_read_until_partial_then_full() {
+        let reader = ChunkReader {
+            chunks: vec![b"REA", b"RE-", b"REA", b"READY!"],
+            index: 0,
+        };
+        assert!(read_until(reader, b"READY").unwrap());
+    }
 }

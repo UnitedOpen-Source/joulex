@@ -76,6 +76,8 @@ pub enum OptionsError<'a> {
     InvalidTargetPrecision(String),
     #[error("Invalid duration '{0}' for '--timeout': {1}")]
     InvalidTimeout(String, String),
+    #[error("The --until pattern cannot be empty")]
+    EmptyUntilPattern,
 }
 
 #[derive(Debug, Error)]
