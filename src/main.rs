@@ -58,7 +58,7 @@ fn run() -> Result<()> {
         let mut command = build_command();
         clap_complete::generate(shell, &mut command, "joulex", &mut std::io::stdout());
         if shell == Shell::Fish {
-            print!("{}", cli::FISH_COMMAND_COMPLETION);
+            crate::out!("{}", cli::FISH_COMMAND_COMPLETION);
         }
         return Ok(());
     }
@@ -99,7 +99,7 @@ fn run() -> Result<()> {
         let checks = system_check::run_checks();
         let passed = system_check::all_passed(&checks);
         if options.output_style != options::OutputStyleOption::Disabled {
-            println!("{}", system_check::report(&checks));
+            crate::outln!("{}", system_check::report(&checks));
         } else if mode == "strict" && !passed {
             // '--style none' hides the report, but a failure must be explained
             eprint!("{}", system_check::report(&checks));

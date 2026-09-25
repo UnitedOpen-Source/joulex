@@ -568,7 +568,7 @@ impl<'a> BenchmarkRunner<'a> {
                 } else {
                     String::new()
                 };
-                println!(
+                crate::outln!(
                     "{}{}: {}{}",
                     "Benchmark ".bold(),
                     (self.display_number + 1).to_string().bold(),
@@ -576,7 +576,7 @@ impl<'a> BenchmarkRunner<'a> {
                     suffix,
                 );
             } else if is_interrupted {
-                println!(
+                crate::outln!(
                     "  {}",
                     colors::yellow(format!("(interrupted after {runs_done} of {planned} runs)"))
                 );
@@ -593,7 +593,7 @@ impl<'a> BenchmarkRunner<'a> {
                     ),
                     _ => String::new(),
                 };
-                println!(
+                crate::outln!(
                     "  {:<21}{:>8}{}",
                     if cold.warmup {
                         "Cold (warmup 1):"
@@ -608,7 +608,7 @@ impl<'a> BenchmarkRunner<'a> {
             if let Some(stddev) = t_stddev {
                 let stddev_str = format_duration(stddev, Some(time_unit));
 
-                println!(
+                crate::outln!(
                     "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",
                     colors::green("mean").bold(),
                     colors::green("σ"),
@@ -620,7 +620,7 @@ impl<'a> BenchmarkRunner<'a> {
                     colors::blue(mem_str)
                 );
 
-                println!(
+                crate::outln!(
                     "  Range ({} … {} … {}):   {:>8} … {:>8} … {:>8}    {}",
                     colors::cyan("min"),
                     colors::yellow("median"),
@@ -636,7 +636,7 @@ impl<'a> BenchmarkRunner<'a> {
                 } else {
                     String::new()
                 };
-                println!(
+                crate::outln!(
                     "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
                     colors::green("abs").bold(),
                     colors::green(mean_str).bold(),
@@ -650,7 +650,7 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if let Some(warmup) = self.warmup.filter(|w| w.auto) {
-                println!(
+                crate::outln!(
                     "  Warmup (auto):      {}",
                     format!(
                         "{} runs, last {} within {:.1}%{}",
@@ -665,8 +665,8 @@ impl<'a> BenchmarkRunner<'a> {
 
             if self.options.show_resource_usage {
                 match self.resource_summary() {
-                    Some(line) => println!("  Resources (mean):   {}", line.dimmed()),
-                    None => println!(
+                    Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
+                    None => crate::outln!(
                         "  Resources:          {}",
                         "not available (Unix only)".dimmed()
                     ),
@@ -695,14 +695,14 @@ impl<'a> BenchmarkRunner<'a> {
                         format!("{mean_joules:.3} J")
                     };
 
-                    println!(
+                    crate::outln!(
                         "  Energy ({}):        {:>14}    [Power: {}]",
                         colors::yellow("mean").bold(),
                         colors::yellow(energy_str).bold(),
                         colors::yellow(format!("{watts:.2} W"))
                     );
                 } else {
-                    println!(
+                    crate::outln!(
                         "  Energy:             {:>14}",
                         "RAPL unprivileged/unavailable on host".dimmed()
                     );
@@ -711,7 +711,7 @@ impl<'a> BenchmarkRunner<'a> {
 
             if self.options.deep_stats {
                 if let Some(deep) = compute_deep_stats(&self.times_real) {
-                    println!(
+                    crate::outln!(
                         "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
                         format_duration(deep.mean_ci_lower, Some(time_unit)),
                         format_duration(deep.mean_ci_upper, Some(time_unit)),
@@ -728,7 +728,7 @@ impl<'a> BenchmarkRunner<'a> {
                     let geomean_str = crate::stats::summary::geometric_mean(&self.times_real)
                         .map(|g| format!(", geometric mean: {}", fmt(g)))
                         .unwrap_or_default();
-                    println!(
+                    crate::outln!(
                         "  Percentiles:        [p05: {}, p25: {}, p75: {}, p95: {} (IQR {}){}]",
                         fmt(p05),
                         fmt(p25),
@@ -839,7 +839,7 @@ impl<'a> BenchmarkRunner<'a> {
         }
 
         if self.options.output_style != OutputStyleOption::Disabled {
-            println!(" ");
+            crate::outln!(" ");
         }
 
         let resources = if self.options.show_resource_usage {
@@ -943,7 +943,7 @@ impl<'a> Benchmark<'a> {
         );
 
         if self.options.output_style != OutputStyleOption::Disabled {
-            println!(
+            crate::outln!(
                 "{}{}: {}",
                 "Benchmark ".bold(),
                 (self.display_number + 1).to_string().bold(),
@@ -953,7 +953,7 @@ impl<'a> Benchmark<'a> {
 
         if crate::util::interrupt::interrupted() {
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!(
+                crate::outln!(
                     "  {}",
                     colors::yellow("(interrupted before completing any runs)")
                 );
@@ -987,7 +987,7 @@ impl<'a> Benchmark<'a> {
                 Err(e) if e.is::<crate::error::Interrupted>() => {
                     let _ = runner.run_cleanup();
                     if self.options.output_style != OutputStyleOption::Disabled {
-                        println!(
+                        crate::outln!(
                             "  {}",
                             colors::yellow("(interrupted before completing any runs)")
                         );
@@ -1036,7 +1036,7 @@ impl<'a> Benchmark<'a> {
             if crate::util::interrupt::interrupted() {
                 let _ = runner.run_cleanup();
                 if self.options.output_style != OutputStyleOption::Disabled {
-                    println!(
+                    crate::outln!(
                         "  {}",
                         colors::yellow("(interrupted before completing any runs)")
                     );
@@ -1062,7 +1062,7 @@ impl<'a> Benchmark<'a> {
             }
             let _ = runner.run_cleanup();
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!(
+                crate::outln!(
                     "  {}",
                     colors::yellow("(interrupted before completing any runs)")
                 );
@@ -1078,7 +1078,7 @@ impl<'a> Benchmark<'a> {
                 }
                 let _ = runner.run_cleanup();
                 if self.options.output_style != OutputStyleOption::Disabled {
-                    println!(
+                    crate::outln!(
                         "  {}",
                         colors::yellow("(interrupted before completing any runs)")
                     );
@@ -1147,7 +1147,7 @@ impl<'a> Benchmark<'a> {
 
         if runner.times_real.is_empty() {
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!(
+                crate::outln!(
                     "  {}",
                     colors::yellow("(interrupted before completing any runs)")
                 );
