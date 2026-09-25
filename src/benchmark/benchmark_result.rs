@@ -113,6 +113,11 @@ pub struct BenchmarkResult {
     /// It is not part of any other field.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_run: Option<FirstRun>,
+
+    /// Interference diagnostics of the run times (trend, multimodality,
+    /// outlier-inflated variance)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<crate::stats::diagnostics::Diagnostics>,
 }
 
 /// The first (cold) run of a benchmark (`--first-run=separate`).

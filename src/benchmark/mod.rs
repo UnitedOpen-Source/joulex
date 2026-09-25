@@ -19,6 +19,7 @@ use crate::output::format::{format_duration, format_duration_unit};
 use crate::output::progress_bar::get_progress_bar;
 use crate::output::warnings::{OutlierWarningOptions, Warnings};
 use crate::stats::deep::compute_deep_stats;
+use crate::stats::diagnostics::Diagnostics;
 use crate::util::exit_code::extract_exit_code;
 use crate::util::min_max::{max, min};
 use crate::util::units::{format_bytes, Second};
@@ -799,14 +800,33 @@ impl<'a> BenchmarkRunner<'a> {
             }
         }
 
+        let diagnostics = Diagnostics::compute(&self.times_real, OUTLIER_THRESHOLD);
+
         if !self.options.suppress_outlier_warnings {
             if scores[0] > OUTLIER_THRESHOLD {
                 warnings.push(Warnings::SlowInitialRun(
                     self.times_real[0],
                     outlier_warning_options,
                 ));
+            } else if diagnostics.has_inflated_variance() && !diagnostics.is_multimodal() {
+                // More specific than the generic outlier warning below
+                warnings.push(Warnings::InflatedVariance(
+                    diagnostics.outlier_variance_fraction.unwrap_or_default(),
+                    diagnostics.outlier_count.unwrap_or_default(),
+                ));
             } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
                 warnings.push(Warnings::OutliersDetected(outlier_warning_options));
+            }
+            if diagnostics.has_trend() {
+                warnings.push(Warnings::Trend(
+                    diagnostics.trend_rel.unwrap_or_default(),
+                    diagnostics.trend_p.unwrap_or(1.0),
+                ));
+            }
+            if diagnostics.is_multimodal() {
+                warnings.push(Warnings::Multimodal(
+                    diagnostics.bimodality.unwrap_or_default(),
+                ));
             }
         }
 
@@ -876,6 +896,7 @@ impl<'a> BenchmarkRunner<'a> {
             resources,
             runs_planned,
             first_run,
+            diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
         })
     }
 }
