@@ -56,8 +56,22 @@ pub trait MarkupExporter {
             } else {
                 "".into()
             };
+            let mean_cell = if measurement.timed_out {
+                let timeout_sec = measurement.timeout.unwrap_or(measurement.mean);
+                let (timeout_val, _) = format_duration_value(timeout_sec, Some(unit));
+                format!(">{timeout_val} (timeout)")
+            } else {
+                format!("{mean_str}{stddev_str}")
+            };
             let min_str = format_duration_value(measurement.min, Some(unit)).0;
             let max_str = format_duration_value(measurement.max, Some(unit)).0;
+            let (min_cell, max_cell) = if measurement.timed_out
+                && measurement.times.as_ref().is_none_or(|t| t.is_empty())
+            {
+                ("n/a".into(), "n/a".into())
+            } else {
+                (min_str, max_str)
+            };
             let rel_str = if entry.relative_speed.is_finite() {
                 format!("{:.2}", entry.relative_speed)
             } else {
@@ -78,9 +92,9 @@ pub trait MarkupExporter {
             // prepare table row entries
             table.push_str(&self.table_row(&[
                 &self.command(cmd_str),
-                &format!("{mean_str}{stddev_str}"),
-                &min_str,
-                &max_str,
+                &mean_cell,
+                &min_cell,
+                &max_cell,
                 &format!("{rel_str}{rel_stddev_str}"),
             ]))
         }

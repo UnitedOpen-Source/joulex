@@ -516,6 +516,16 @@ pub fn build_command() -> Command {
                        that was reached."),
         )
         .arg(
+            Arg::new("timeout")
+                .long("timeout")
+                .action(ArgAction::Set)
+                .value_name("DURATION")
+                .allow_hyphen_values(true)
+                .help("Kill a benchmark run that exceeds DURATION (e.g. 500ms, 2s, 1m). \
+                       The benchmark is marked as \"timed out\" and later runs of that \
+                       command are skipped."),
+        )
+        .arg(
             Arg::new("precision")
                 .long("precision")
                 .action(ArgAction::Set)

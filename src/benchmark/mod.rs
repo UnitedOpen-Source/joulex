@@ -67,6 +67,8 @@ pub struct BenchmarkRunner<'a> {
     pub cold_warmup_time: Option<Second>,
     /// `--subtract`: the baseline subtracted from every run
     pub baseline: Option<benchmark_result::Baseline>,
+    /// Whether this runner timed out (--timeout <DURATION>)
+    pub timed_out: bool,
 }
 
 /// "1%", "0.5%"
@@ -147,6 +149,7 @@ impl<'a> BenchmarkRunner<'a> {
             initial_total_time: 0.0,
             cold_warmup_time: None,
             baseline: None,
+            timed_out: false,
         }
     }
 
@@ -154,17 +157,28 @@ impl<'a> BenchmarkRunner<'a> {
         &self,
         command: &Command<'_>,
         iteration: executor::BenchmarkIteration,
+        kind: &'static str,
         error_output: &'static str,
     ) -> Result<TimingResult> {
-        self.executor
+        let (result, _) = self
+            .executor
             .run_command_and_measure(
                 command,
                 iteration,
                 Some(CmdFailureAction::RaiseError),
                 self.output_policy,
             )
-            .map(|r| r.0)
-            .map_err(|_| anyhow!(error_output))
+            .map_err(|_| anyhow!(error_output))?;
+
+        if result.timed_out {
+            let timeout_str = self
+                .options
+                .timeout
+                .map(|t| format_duration(t.as_secs_f64(), self.options.time_unit).to_string())
+                .unwrap_or_default();
+            bail!("The {kind} command timed out (> {timeout_str}).");
+        }
+        Ok(result)
     }
 
     pub fn run_setup(&self) -> Result<TimingResult> {
@@ -184,6 +198,7 @@ impl<'a> BenchmarkRunner<'a> {
                 self.run_intermediate_command(
                     &cmd,
                     executor::BenchmarkIteration::NonBenchmarkRun,
+                    "setup",
                     error_output,
                 )
             })
@@ -208,6 +223,7 @@ impl<'a> BenchmarkRunner<'a> {
                 self.run_intermediate_command(
                     &cmd,
                     executor::BenchmarkIteration::NonBenchmarkRun,
+                    "cleanup",
                     error_output,
                 )
             })
@@ -221,7 +237,7 @@ impl<'a> BenchmarkRunner<'a> {
 
         self.preparation_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, error_output))
+            .map(|cmd| self.run_intermediate_command(cmd, iteration, "preparation", error_output))
             .transpose()
     }
 
@@ -231,7 +247,7 @@ impl<'a> BenchmarkRunner<'a> {
 
         self.conclusion_command
             .as_ref()
-            .map(|cmd| self.run_intermediate_command(cmd, iteration, error_output))
+            .map(|cmd| self.run_intermediate_command(cmd, iteration, "conclusion", error_output))
             .transpose()
     }
 
@@ -244,6 +260,10 @@ impl<'a> BenchmarkRunner<'a> {
             None,
             self.output_policy,
         )?;
+        if result.timed_out {
+            self.timed_out = true;
+            return Ok(result.time_real);
+        }
         let _ = self.run_conclusion(BenchmarkIteration::Warmup(iteration))?;
         if iteration == 0 && self.options.first_run == FirstRunPolicy::Separate {
             self.cold_warmup_time = Some(result.time_real);
@@ -262,6 +282,14 @@ impl<'a> BenchmarkRunner<'a> {
             }
             times.push(self.run_warmup_iteration(iteration)?);
             on_run();
+            if self.timed_out {
+                return Ok(WarmupSummary {
+                    runs: times.len() as u64,
+                    auto: true,
+                    stable: false,
+                    spread: 0.0,
+                });
+            }
             if times.len() >= AUTO_WARMUP_WINDOW {
                 let spread = relative_spread(&times[times.len() - AUTO_WARMUP_WINDOW..]);
                 if spread <= AUTO_WARMUP_THRESHOLD {
@@ -400,6 +428,12 @@ impl<'a> BenchmarkRunner<'a> {
         let energy_initial = self.energy_sampler.as_mut().and_then(|s| s.stop());
         let success = status.success();
 
+        if res.timed_out {
+            self.timed_out = true;
+            self.count = 1;
+            return Ok(());
+        }
+
         let conclusion_result = self.run_conclusion(BenchmarkIteration::Benchmark(0))?;
         let conclusion_overhead =
             conclusion_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
@@ -460,6 +494,12 @@ impl<'a> BenchmarkRunner<'a> {
         )?;
         let energy = self.energy_sampler.as_mut().and_then(|s| s.stop());
         let success = status.success();
+
+        if res.timed_out {
+            self.timed_out = true;
+            return Ok(());
+        }
+
         let res = self.subtract_baseline(res);
 
         self.times_real.push(res.time_real);
@@ -530,12 +570,13 @@ impl<'a> BenchmarkRunner<'a> {
     }
 
     pub fn finish(mut self, print_header: bool) -> Result<BenchmarkResult> {
+        let timeout_sec = self.options.timeout.map(|t| t.as_secs_f64()).unwrap_or(0.0);
         let first_run_excluded = self.excludes_first_timing_run() && self.times_real.len() > 1;
         let first_run = self.take_first_run();
         let original_run_count = self.times_real.len();
         let mut omitted_failed_runs = Vec::new();
 
-        if self.options.omit_failed_runs {
+        if self.options.omit_failed_runs && !self.timed_out {
             let mut keep_indices = Vec::new();
             for (index, &exit_code) in self.exit_codes.iter().enumerate() {
                 if exit_code == Some(0) {
@@ -561,35 +602,53 @@ impl<'a> BenchmarkRunner<'a> {
 
         let mut discarded_outliers = Vec::new();
         let mut too_many_outliers = false;
-        if let Some(threshold) = self.options.discard_outliers {
-            match outlier_indices(&self.times_real, threshold, MAX_DISCARD_FRACTION) {
-                Some(drop) if !drop.is_empty() => {
-                    let keep: Vec<usize> = (0..self.times_real.len())
-                        .filter(|index| !drop.contains(index))
-                        .collect();
-                    discarded_outliers = drop.iter().map(|&index| run_numbers[index]).collect();
-                    self.retain_runs(&keep);
+        if !self.timed_out {
+            if let Some(threshold) = self.options.discard_outliers {
+                match outlier_indices(&self.times_real, threshold, MAX_DISCARD_FRACTION) {
+                    Some(drop) if !drop.is_empty() => {
+                        let keep: Vec<usize> = (0..self.times_real.len())
+                            .filter(|index| !drop.contains(index))
+                            .collect();
+                        discarded_outliers = drop.iter().map(|&index| run_numbers[index]).collect();
+                        self.retain_runs(&keep);
+                    }
+                    Some(_) => {}
+                    None => too_many_outliers = true,
                 }
-                Some(_) => {}
-                None => too_many_outliers = true,
             }
         }
 
         let num_omitted_failed_runs = omitted_failed_runs.len();
 
         let t_num = self.times_real.len();
-        let t_mean = mean(&self.times_real);
-        let t_stddev = if self.times_real.len() > 1 {
-            Some(standard_deviation(&self.times_real, Some(t_mean)))
-        } else {
-            None
-        };
-        let t_median = median(&self.times_real);
-        let t_min = min(&self.times_real);
-        let t_max = max(&self.times_real);
-
-        let user_mean = mean(&self.times_user);
-        let system_mean = mean(&self.times_system);
+        let (t_mean, t_stddev, t_median, t_min, t_max, user_mean, system_mean) =
+            if self.timed_out && self.times_real.is_empty() {
+                (
+                    timeout_sec,
+                    None,
+                    timeout_sec,
+                    timeout_sec,
+                    timeout_sec,
+                    0.0,
+                    0.0,
+                )
+            } else {
+                let real_mean = mean(&self.times_real);
+                let stddev = if self.times_real.len() > 1 {
+                    Some(standard_deviation(&self.times_real, Some(real_mean)))
+                } else {
+                    None
+                };
+                (
+                    real_mean,
+                    stddev,
+                    median(&self.times_real),
+                    min(&self.times_real),
+                    max(&self.times_real),
+                    mean(&self.times_user),
+                    mean(&self.times_system),
+                )
+            };
 
         let (mean_str, time_unit) = format_duration_unit(t_mean, self.options.time_unit);
         let min_str = format_duration(t_min, Some(time_unit));
@@ -687,70 +746,81 @@ impl<'a> BenchmarkRunner<'a> {
                 );
             }
 
-            // Mean and σ with consistent decimals ('--precision auto')
-            let (mean_display, stddev_display) = match t_stddev {
-                Some(stddev) => {
-                    let (mean_value, stddev_value) =
-                        crate::output::format::format_mean_stddev_values(
-                            t_mean,
-                            Some(stddev),
-                            time_unit,
-                        );
-                    let unit_name = time_unit.short_name();
-                    (
-                        format!("{mean_value} {unit_name}"),
-                        stddev_value.map(|s| format!("{s} {unit_name}")),
-                    )
-                }
-                None => (mean_str.clone(), None),
-            };
-            let cold_str = first_run
-                .as_ref()
-                .map(|cold| format_duration(cold.time, Some(time_unit)));
-            // Column width: 8 fits the default precision ("999.9 ms"); more
-            // decimals (--precision) widen all columns of this block alike
-            let width = [
-                Some(&mean_display),
-                stddev_display.as_ref(),
-                Some(&min_str),
-                Some(&median_str),
-                Some(&max_str),
-                cold_str.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .map(|s| s.chars().count())
-            .max()
-            .unwrap_or(0)
-            .max(8);
-
-            if let Some(cold) = &first_run {
-                // Aligned with the columns of the "Time" line below
-                let details = match (cold.user, cold.system) {
-                    (Some(user), Some(system)) => format!(
-                        "{:pad$}[User: {}, System: {}]",
-                        "",
-                        colors::blue(format_duration(user, Some(time_unit))),
-                        colors::blue(format_duration(system, Some(time_unit))),
-                        // " ± " + σ column + 4 spaces, as in the Time line
-                        pad = width + 7
-                    ),
-                    _ => String::new(),
-                };
+            if self.timed_out {
+                let timeout_str = format_duration(timeout_sec, self.options.time_unit);
                 crate::outln!(
-                    "  {:<21}{:>width$}{}",
-                    if cold.warmup {
-                        "Cold (warmup 1):"
-                    } else {
-                        "Cold (1st run):"
-                    },
-                    colors::yellow(cold_str.clone().unwrap_or_default()).bold(),
-                    details
+                    "  {}",
+                    colors::yellow(format!(
+                        "Timed out (> {timeout_str}) — skipped remaining runs"
+                    ))
                 );
             }
 
-            if let Some(stddev_str) = stddev_display {
-                crate::outln!(
+            if !self.timed_out || !self.times_real.is_empty() {
+                // Mean and σ with consistent decimals ('--precision auto')
+                let (mean_display, stddev_display) = match t_stddev {
+                    Some(stddev) => {
+                        let (mean_value, stddev_value) =
+                            crate::output::format::format_mean_stddev_values(
+                                t_mean,
+                                Some(stddev),
+                                time_unit,
+                            );
+                        let unit_name = time_unit.short_name();
+                        (
+                            format!("{mean_value} {unit_name}"),
+                            stddev_value.map(|s| format!("{s} {unit_name}")),
+                        )
+                    }
+                    None => (mean_str.clone(), None),
+                };
+                let cold_str = first_run
+                    .as_ref()
+                    .map(|cold| format_duration(cold.time, Some(time_unit)));
+                // Column width: 8 fits the default precision ("999.9 ms"); more
+                // decimals (--precision) widen all columns of this block alike
+                let width = [
+                    Some(&mean_display),
+                    stddev_display.as_ref(),
+                    Some(&min_str),
+                    Some(&median_str),
+                    Some(&max_str),
+                    cold_str.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+                .map(|s| s.chars().count())
+                .max()
+                .unwrap_or(0)
+                .max(8);
+
+                if let Some(cold) = &first_run {
+                    // Aligned with the columns of the "Time" line below
+                    let details = match (cold.user, cold.system) {
+                        (Some(user), Some(system)) => format!(
+                            "{:pad$}[User: {}, System: {}]",
+                            "",
+                            colors::blue(format_duration(user, Some(time_unit))),
+                            colors::blue(format_duration(system, Some(time_unit))),
+                            // " ± " + σ column + 4 spaces, as in the Time line
+                            pad = width + 7
+                        ),
+                        _ => String::new(),
+                    };
+                    crate::outln!(
+                        "  {:<21}{:>width$}{}",
+                        if cold.warmup {
+                            "Cold (warmup 1):"
+                        } else {
+                            "Cold (1st run):"
+                        },
+                        colors::yellow(cold_str.clone().unwrap_or_default()).bold(),
+                        details
+                    );
+                }
+
+                if let Some(stddev_str) = stddev_display {
+                    crate::outln!(
                     "  Time ({} ± {}):     {:>width$} ± {:>width$}    [User: {}, System: {}{}{}]",
                     colors::green("mean").bold(),
                     colors::green("σ"),
@@ -762,23 +832,23 @@ impl<'a> BenchmarkRunner<'a> {
                     colors::blue(mem_str)
                 );
 
-                crate::outln!(
-                    "  Range ({} … {} … {}):   {:>width$} … {:>width$} … {:>width$}    {}",
-                    colors::cyan("min"),
-                    colors::yellow("median"),
-                    colors::purple("max"),
-                    colors::cyan(min_str),
-                    colors::yellow(median_str),
-                    colors::purple(max_str),
-                    num_str.dimmed()
-                );
-            } else {
-                let suffix = if !excluded.is_empty() {
-                    format!("    {}", num_str.dimmed())
+                    crate::outln!(
+                        "  Range ({} … {} … {}):   {:>width$} … {:>width$} … {:>width$}    {}",
+                        colors::cyan("min"),
+                        colors::yellow("median"),
+                        colors::purple("max"),
+                        colors::cyan(min_str),
+                        colors::yellow(median_str),
+                        colors::purple(max_str),
+                        num_str.dimmed()
+                    );
                 } else {
-                    String::new()
-                };
-                crate::outln!(
+                    let suffix = if !excluded.is_empty() {
+                        format!("    {}", num_str.dimmed())
+                    } else {
+                        String::new()
+                    };
+                    crate::outln!(
                     "  Time ({} ≡):        {:>width$}  {:>width$}     [User: {}, System: {}{}{}]{}",
                     colors::green("abs").bold(),
                     colors::green(mean_str).bold(),
@@ -789,96 +859,97 @@ impl<'a> BenchmarkRunner<'a> {
                     colors::blue(mem_str),
                     suffix,
                 );
-            }
-
-            if let Some(warmup) = self.warmup.filter(|w| w.auto) {
-                crate::outln!(
-                    "  Warmup (auto):      {}",
-                    format!(
-                        "{} runs, last {} within {:.1}%{}",
-                        warmup.runs,
-                        AUTO_WARMUP_WINDOW.min(warmup.runs as usize),
-                        warmup.spread * 100.0,
-                        if warmup.stable { "" } else { " (not stable)" }
-                    )
-                    .dimmed()
-                );
-            }
-
-            if self.options.show_resource_usage {
-                match self.resource_summary() {
-                    Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
-                    None => crate::outln!(
-                        "  Resources:          {}",
-                        "not available (Unix only)".dimmed()
-                    ),
                 }
-            }
 
-            if self.options.measure_energy {
-                let valid_energy: Vec<f64> =
-                    self.energy_measurements.iter().filter_map(|&e| e).collect();
-                if !valid_energy.is_empty() {
-                    let mean_joules = mean(&valid_energy);
-                    let stddev_joules = if valid_energy.len() > 1 {
-                        Some(standard_deviation(&valid_energy, Some(mean_joules)))
-                    } else {
-                        None
-                    };
-                    let watts = if t_mean > 0.0 {
-                        mean_joules / t_mean
-                    } else {
-                        0.0
-                    };
-
-                    let energy_str = if let Some(sd) = stddev_joules {
-                        format!("{mean_joules:.3} ± {sd:.3} J")
-                    } else {
-                        format!("{mean_joules:.3} J")
-                    };
-
+                if let Some(warmup) = self.warmup.filter(|w| w.auto) {
                     crate::outln!(
-                        "  Energy ({}):        {:>14}    [Power: {}]",
-                        colors::yellow("mean").bold(),
-                        colors::yellow(energy_str).bold(),
-                        colors::yellow(format!("{watts:.2} W"))
-                    );
-                } else {
-                    crate::outln!(
-                        "  Energy:             {:>14}",
-                        "RAPL unprivileged/unavailable on host".dimmed()
+                        "  Warmup (auto):      {}",
+                        format!(
+                            "{} runs, last {} within {:.1}%{}",
+                            warmup.runs,
+                            AUTO_WARMUP_WINDOW.min(warmup.runs as usize),
+                            warmup.spread * 100.0,
+                            if warmup.stable { "" } else { " (not stable)" }
+                        )
+                        .dimmed()
                     );
                 }
-            }
 
-            if self.options.deep_stats {
-                if let Some(deep) = compute_deep_stats(&self.times_real) {
-                    crate::outln!(
-                        "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
-                        format_duration(deep.mean_ci_lower, Some(time_unit)),
-                        format_duration(deep.mean_ci_upper, Some(time_unit)),
-                        format_duration(deep.median_ci_lower, Some(time_unit)),
-                        format_duration(deep.median_ci_upper, Some(time_unit)),
-                        format_duration(deep.std_dev_ci_lower, Some(time_unit)),
-                        format_duration(deep.std_dev_ci_upper, Some(time_unit))
-                    );
+                if self.options.show_resource_usage {
+                    match self.resource_summary() {
+                        Some(line) => crate::outln!("  Resources (mean):   {}", line.dimmed()),
+                        None => crate::outln!(
+                            "  Resources:          {}",
+                            "not available (Unix only)".dimmed()
+                        ),
+                    }
                 }
-                if let Some([p05, p25, p75, p95]) =
-                    crate::stats::summary::quartiles_and_tails(&self.times_real)
-                {
-                    let fmt = |v| format_duration(v, Some(time_unit));
-                    let geomean_str = crate::stats::summary::geometric_mean(&self.times_real)
-                        .map(|g| format!(", geometric mean: {}", fmt(g)))
-                        .unwrap_or_default();
-                    crate::outln!(
-                        "  Percentiles:        [p05: {}, p25: {}, p75: {}, p95: {} (IQR {}){}]",
-                        fmt(p05),
-                        fmt(p25),
-                        fmt(p75),
-                        fmt(p95),
-                        fmt(p75 - p25),
-                        geomean_str
-                    );
+
+                if self.options.measure_energy {
+                    let valid_energy: Vec<f64> =
+                        self.energy_measurements.iter().filter_map(|&e| e).collect();
+                    if !valid_energy.is_empty() {
+                        let mean_joules = mean(&valid_energy);
+                        let stddev_joules = if valid_energy.len() > 1 {
+                            Some(standard_deviation(&valid_energy, Some(mean_joules)))
+                        } else {
+                            None
+                        };
+                        let watts = if t_mean > 0.0 {
+                            mean_joules / t_mean
+                        } else {
+                            0.0
+                        };
+
+                        let energy_str = if let Some(sd) = stddev_joules {
+                            format!("{mean_joules:.3} ± {sd:.3} J")
+                        } else {
+                            format!("{mean_joules:.3} J")
+                        };
+
+                        crate::outln!(
+                            "  Energy ({}):        {:>14}    [Power: {}]",
+                            colors::yellow("mean").bold(),
+                            colors::yellow(energy_str).bold(),
+                            colors::yellow(format!("{watts:.2} W"))
+                        );
+                    } else {
+                        crate::outln!(
+                            "  Energy:             {:>14}",
+                            "RAPL unprivileged/unavailable on host".dimmed()
+                        );
+                    }
+                }
+
+                if self.options.deep_stats {
+                    if let Some(deep) = compute_deep_stats(&self.times_real) {
+                        crate::outln!(
+                            "  Bootstrap 95% CI:   [mean: {} … {}, median: {} … {}, σ: {} … {}]",
+                            format_duration(deep.mean_ci_lower, Some(time_unit)),
+                            format_duration(deep.mean_ci_upper, Some(time_unit)),
+                            format_duration(deep.median_ci_lower, Some(time_unit)),
+                            format_duration(deep.median_ci_upper, Some(time_unit)),
+                            format_duration(deep.std_dev_ci_lower, Some(time_unit)),
+                            format_duration(deep.std_dev_ci_upper, Some(time_unit))
+                        );
+                    }
+                    if let Some([p05, p25, p75, p95]) =
+                        crate::stats::summary::quartiles_and_tails(&self.times_real)
+                    {
+                        let fmt = |v| format_duration(v, Some(time_unit));
+                        let geomean_str = crate::stats::summary::geometric_mean(&self.times_real)
+                            .map(|g| format!(", geometric mean: {}", fmt(g)))
+                            .unwrap_or_default();
+                        crate::outln!(
+                            "  Percentiles:        [p05: {}, p25: {}, p75: {}, p95: {} (IQR {}){}]",
+                            fmt(p05),
+                            fmt(p25),
+                            fmt(p75),
+                            fmt(p95),
+                            fmt(p75 - p25),
+                            geomean_str
+                        );
+                    }
                 }
             }
         }
@@ -886,112 +957,117 @@ impl<'a> BenchmarkRunner<'a> {
         // Warnings
         let mut warnings = vec![];
 
-        // Check execution time
-        if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME) {
-            warnings.push(Warnings::FastExecutionTime);
-        }
+        let diagnostics = if !self.timed_out && !self.times_real.is_empty() {
+            // Check execution time
+            if self.executor.uses_shell() && self.times_real.iter().any(|&t| t < MIN_EXECUTION_TIME)
+            {
+                warnings.push(Warnings::FastExecutionTime);
+            }
 
-        // Check program exit codes
-        if !self.all_succeeded {
-            warnings.push(Warnings::NonZeroExitCode);
-        }
+            // Check program exit codes
+            if !self.all_succeeded {
+                warnings.push(Warnings::NonZeroExitCode);
+            }
 
-        if let Some(warmup) = self.warmup.filter(|w| w.auto && !w.stable) {
-            warnings.push(Warnings::WarmupNotStable {
-                runs: warmup.runs,
-                spread: warmup.spread,
-            });
-        }
-        if let Some(baseline) = &self.baseline {
-            if baseline.clamped_runs > 0 {
-                warnings.push(Warnings::BaselineLarger {
-                    runs: baseline.clamped_runs,
+            if let Some(warmup) = self.warmup.filter(|w| w.auto && !w.stable) {
+                warnings.push(Warnings::WarmupNotStable {
+                    runs: warmup.runs,
+                    spread: warmup.spread,
+                });
+            }
+            if let Some(baseline) = &self.baseline {
+                if baseline.clamped_runs > 0 {
+                    warnings.push(Warnings::BaselineLarger {
+                        runs: baseline.clamped_runs,
+                        total: original_run_count,
+                    });
+                }
+                if baseline
+                    .stddev
+                    .is_some_and(|sd| t_mean > 0.0 && sd > 0.1 * t_mean)
+                {
+                    warnings.push(Warnings::NoisyBaseline);
+                }
+            }
+            if let Some((target, reached)) = precision_reached {
+                if reached.is_none_or(|r| r > target) {
+                    warnings.push(Warnings::TargetPrecisionNotReached {
+                        target,
+                        reached,
+                        runs: self.times_real.len(),
+                    });
+                }
+            }
+            if too_many_outliers {
+                warnings.push(Warnings::TooManyOutliers {
+                    total: self.times_real.len(),
+                });
+            }
+            if num_omitted_failed_runs > 0 {
+                warnings.push(Warnings::FailedRunsOmitted {
+                    omitted: num_omitted_failed_runs,
                     total: original_run_count,
                 });
             }
-            if baseline
-                .stddev
-                .is_some_and(|sd| t_mean > 0.0 && sd > 0.1 * t_mean)
-            {
-                warnings.push(Warnings::NoisyBaseline);
-            }
-        }
-        if let Some((target, reached)) = precision_reached {
-            if reached.is_none_or(|r| r > target) {
-                warnings.push(Warnings::TargetPrecisionNotReached {
-                    target,
-                    reached,
-                    runs: self.times_real.len(),
-                });
-            }
-        }
-        if too_many_outliers {
-            warnings.push(Warnings::TooManyOutliers {
-                total: self.times_real.len(),
-            });
-        }
-        if num_omitted_failed_runs > 0 {
-            warnings.push(Warnings::FailedRunsOmitted {
-                omitted: num_omitted_failed_runs,
-                total: original_run_count,
-            });
-        }
 
-        // Run outlier detection
-        let scores = modified_zscores(&self.times_real);
+            // Run outlier detection
+            let scores = modified_zscores(&self.times_real);
 
-        let outlier_warning_options = OutlierWarningOptions {
-            warmup_in_use: self.options.warmup_count > 0 || self.options.warmup_auto,
-            prepare_in_use: self
-                .options
-                .preparation_command
-                .as_ref()
-                .map(|v| v.len())
-                .unwrap_or(0)
-                > 0,
+            let outlier_warning_options = OutlierWarningOptions {
+                warmup_in_use: self.options.warmup_count > 0 || self.options.warmup_auto,
+                prepare_in_use: self
+                    .options
+                    .preparation_command
+                    .as_ref()
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+                    > 0,
+            };
+
+            if !self.options.suppress_off_cpu_warnings {
+                let total_cpu = user_mean + system_mean;
+                if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
+                    let ratio = if total_cpu > 0.0 {
+                        t_mean / total_cpu
+                    } else {
+                        f64::INFINITY
+                    };
+                    warnings.push(Warnings::OffCpuTime(t_mean, total_cpu, ratio));
+                }
+            }
+
+            let diag = Diagnostics::compute(&self.times_real, OUTLIER_THRESHOLD);
+
+            if !self.options.suppress_outlier_warnings {
+                if scores[0] > OUTLIER_THRESHOLD {
+                    warnings.push(Warnings::SlowInitialRun(
+                        self.times_real[0],
+                        outlier_warning_options,
+                    ));
+                } else if diag.has_inflated_variance() && !diag.is_multimodal() {
+                    // More specific than the generic outlier warning below
+                    warnings.push(Warnings::InflatedVariance(
+                        diag.outlier_variance_fraction.unwrap_or_default(),
+                        diag.outlier_count.unwrap_or_default(),
+                    ));
+                } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
+                    warnings.push(Warnings::OutliersDetected(outlier_warning_options));
+                }
+                if diag.has_trend() {
+                    warnings.push(Warnings::Trend(
+                        diag.trend_rel.unwrap_or_default(),
+                        diag.trend_p.unwrap_or(1.0),
+                    ));
+                }
+                if diag.is_multimodal() {
+                    warnings.push(Warnings::Multimodal(diag.bimodality.unwrap_or_default()));
+                }
+            }
+
+            diag
+        } else {
+            Diagnostics::default()
         };
-
-        if !self.options.suppress_off_cpu_warnings {
-            let total_cpu = user_mean + system_mean;
-            if t_mean >= 0.1 && (total_cpu <= 0.0 || t_mean >= 5.0 * total_cpu) {
-                let ratio = if total_cpu > 0.0 {
-                    t_mean / total_cpu
-                } else {
-                    f64::INFINITY
-                };
-                warnings.push(Warnings::OffCpuTime(t_mean, total_cpu, ratio));
-            }
-        }
-
-        let diagnostics = Diagnostics::compute(&self.times_real, OUTLIER_THRESHOLD);
-
-        if !self.options.suppress_outlier_warnings {
-            if scores[0] > OUTLIER_THRESHOLD {
-                warnings.push(Warnings::SlowInitialRun(
-                    self.times_real[0],
-                    outlier_warning_options,
-                ));
-            } else if diagnostics.has_inflated_variance() && !diagnostics.is_multimodal() {
-                // More specific than the generic outlier warning below
-                warnings.push(Warnings::InflatedVariance(
-                    diagnostics.outlier_variance_fraction.unwrap_or_default(),
-                    diagnostics.outlier_count.unwrap_or_default(),
-                ));
-            } else if scores.iter().any(|&s| s.abs() > OUTLIER_THRESHOLD) {
-                warnings.push(Warnings::OutliersDetected(outlier_warning_options));
-            }
-            if diagnostics.has_trend() {
-                warnings.push(Warnings::Trend(
-                    diagnostics.trend_rel.unwrap_or_default(),
-                    diagnostics.trend_p.unwrap_or(1.0),
-                ));
-            }
-            if diagnostics.is_multimodal() {
-                warnings.push(Warnings::Multimodal(
-                    diagnostics.bimodality.unwrap_or_default(),
-                ));
-            }
-        }
 
         if !warnings.is_empty() {
             eprintln!(" ");
@@ -1083,6 +1159,12 @@ impl<'a> BenchmarkRunner<'a> {
                     met: reached.is_some_and(|r| r <= target),
                 }
             }),
+            timed_out: self.timed_out,
+            timeout: if self.timed_out {
+                Some(timeout_sec)
+            } else {
+                None
+            },
         })
     }
 }
@@ -1108,22 +1190,30 @@ pub fn measure_baseline(
     } else {
         options.warmup_count
     };
-    let run = |iteration| {
-        executor.run_command_and_measure(
-            &command,
-            iteration,
-            Some(CmdFailureAction::RaiseError),
-            &CommandOutputPolicy::Null,
-        )
+    let run = |iteration| -> Result<TimingResult> {
+        let (res, _) = executor
+            .run_command_and_measure(
+                &command,
+                iteration,
+                Some(CmdFailureAction::RaiseError),
+                &CommandOutputPolicy::Null,
+            )
+            .with_context(|| format!("The '--subtract' baseline '{command_line}' failed"))?;
+        if res.timed_out {
+            let timeout_str = options
+                .timeout
+                .map(|t| format_duration(t.as_secs_f64(), options.time_unit).to_string())
+                .unwrap_or_default();
+            bail!("The baseline command timed out (> {timeout_str}).");
+        }
+        Ok(res)
     };
     for i in 0..warmups {
-        run(BenchmarkIteration::Warmup(i))
-            .with_context(|| format!("The '--subtract' baseline '{command_line}' failed"))?;
+        run(BenchmarkIteration::Warmup(i))?;
     }
     let mut results = Vec::new();
     for i in 0..runs {
-        let (result, _) = run(BenchmarkIteration::Benchmark(i))
-            .with_context(|| format!("The '--subtract' baseline '{command_line}' failed"))?;
+        let result = run(BenchmarkIteration::Benchmark(i))?;
         results.push(result);
     }
     let times: Vec<Second> = results.iter().map(|r| r.time_real).collect();
@@ -1270,13 +1360,16 @@ impl<'a> Benchmark<'a> {
             };
 
             for i in 0..self.options.warmup_count {
-                if crate::util::interrupt::interrupted() {
+                if crate::util::interrupt::interrupted() || runner.timed_out {
                     break;
                 }
                 match runner.run_warmup_iteration(i) {
                     Ok(_) => {
                         if let Some(bar) = progress_bar.as_ref() {
                             bar.inc(1)
+                        }
+                        if runner.timed_out {
+                            break;
                         }
                     }
                     Err(e) if e.is::<crate::error::Interrupted>() => break,
@@ -1328,31 +1421,33 @@ impl<'a> Benchmark<'a> {
             return Ok(None);
         }
 
-        match runner.run_initial_measurement() {
-            Ok(()) => {}
-            Err(e) if e.is::<crate::error::Interrupted>() => {
-                if let Some(bar) = progress_bar.as_ref() {
-                    bar.finish_and_clear();
+        if !runner.timed_out {
+            match runner.run_initial_measurement() {
+                Ok(()) => {}
+                Err(e) if e.is::<crate::error::Interrupted>() => {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.finish_and_clear();
+                    }
+                    let _ = runner.run_cleanup();
+                    if self.options.output_style != OutputStyleOption::Disabled {
+                        crate::outln!(
+                            "  {}",
+                            colors::yellow("(interrupted before completing any runs)")
+                        );
+                    }
+                    return Ok(None);
                 }
-                let _ = runner.run_cleanup();
-                if self.options.output_style != OutputStyleOption::Disabled {
-                    crate::outln!(
-                        "  {}",
-                        colors::yellow("(interrupted before completing any runs)")
-                    );
+                Err(e) => {
+                    if let Some(bar) = progress_bar.as_ref() {
+                        bar.finish_and_clear();
+                    }
+                    return Err(e);
                 }
-                return Ok(None);
-            }
-            Err(e) => {
-                if let Some(bar) = progress_bar.as_ref() {
-                    bar.finish_and_clear();
-                }
-                return Err(e);
             }
         }
 
         let count = runner.count;
-        let count_remaining = count - 1;
+        let count_remaining = count.saturating_sub(1);
 
         // Re-configure the progress bar
         if let Some(bar) = progress_bar.as_ref() {
@@ -1369,6 +1464,9 @@ impl<'a> Benchmark<'a> {
         let started = std::time::Instant::now();
         let mut i = 0;
         loop {
+            if runner.timed_out {
+                break;
+            }
             if adaptive {
                 if !runner.needs_more_runs(started, self.options.max_benchmarking_time) {
                     break;
@@ -1386,7 +1484,11 @@ impl<'a> Benchmark<'a> {
             }
 
             let msg = {
-                let mean = format_duration(mean(&runner.times_real), self.options.time_unit);
+                let mean = if runner.times_real.is_empty() {
+                    format_duration(0.0, self.options.time_unit)
+                } else {
+                    format_duration(mean(&runner.times_real), self.options.time_unit)
+                };
                 format!("Current estimate: {}", colors::green(mean.to_string()))
             };
 
@@ -1398,6 +1500,9 @@ impl<'a> Benchmark<'a> {
                 Ok(()) => {
                     if let Some(bar) = progress_bar.as_ref() {
                         bar.inc(1)
+                    }
+                    if runner.timed_out {
+                        break;
                     }
                 }
                 Err(e) if e.is::<crate::error::Interrupted>() => break,
@@ -1421,7 +1526,7 @@ impl<'a> Benchmark<'a> {
             runner.run_cleanup()?;
         }
 
-        if runner.times_real.is_empty() {
+        if runner.times_real.is_empty() && !runner.timed_out {
             if self.options.output_style != OutputStyleOption::Disabled {
                 crate::outln!(
                     "  {}",
@@ -1516,7 +1621,7 @@ mod tests {
             command_output_policies: vec![CommandOutputPolicy::Null],
             ..Default::default()
         };
-        let executor = MockExecutor::new(None);
+        let executor = MockExecutor::new(None, None);
         let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
         runner.times_real = vec![0.1, 0.2];
         runner.times_user = vec![0.05, 0.05];
@@ -1542,7 +1647,7 @@ mod tests {
             command_output_policies: vec![CommandOutputPolicy::Null],
             ..Default::default()
         };
-        let executor = MockExecutor::new(None);
+        let executor = MockExecutor::new(None, None);
         let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
         runner.times_real = vec![0.1, 0.2];
         runner.times_user = vec![0.05, 0.05];

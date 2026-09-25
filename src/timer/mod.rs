@@ -23,6 +23,8 @@ use std::io::Read;
 use std::process::{ChildStdout, Command, ExitStatus};
 
 use anyhow::Result;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 
 /// Used to indicate the result of running a command
 #[derive(Debug, Clone)]
@@ -37,6 +39,74 @@ pub struct TimerResult {
     pub status: ExitStatus,
     /// The tail of stdout and stderr (`--show-output-on-failure`)
     pub captured: Option<CapturedOutput>,
+    /// Whether the process timed out and was killed by the watchdog
+    pub timed_out: bool,
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+pub struct SendHandle(pub windows_sys::Win32::Foundation::HANDLE);
+#[cfg(windows)]
+// SAFETY: Win32 HANDLEs to Job Objects can be safely referenced across threads.
+unsafe impl Send for SendHandle {}
+#[cfg(windows)]
+unsafe impl Sync for SendHandle {}
+
+pub struct Watchdog {
+    done: mpsc::Sender<()>,
+    fired: Arc<AtomicBool>,
+    handle: std::thread::JoinHandle<()>,
+}
+
+impl Watchdog {
+    #[cfg(not(windows))]
+    pub fn arm(pid: u32, timeout: std::time::Duration) -> Self {
+        let (tx, rx) = mpsc::channel::<()>();
+        let fired = Arc::new(AtomicBool::new(false));
+        let f = fired.clone();
+        let handle = std::thread::spawn(move || {
+            if rx.recv_timeout(timeout).is_err() {
+                f.store(true, Ordering::SeqCst);
+                // SAFETY: plain syscall; negative pid targets the process group created via command.process_group(0).
+                unsafe {
+                    libc::kill(-(pid as libc::pid_t), libc::SIGKILL);
+                }
+            }
+        });
+        Watchdog {
+            done: tx,
+            fired,
+            handle,
+        }
+    }
+
+    #[cfg(windows)]
+    pub fn arm(job_handle: SendHandle, timeout: std::time::Duration) -> Self {
+        let (tx, rx) = mpsc::channel::<()>();
+        let fired = Arc::new(AtomicBool::new(false));
+        let f = fired.clone();
+        let handle = std::thread::spawn(move || {
+            if rx.recv_timeout(timeout).is_err() {
+                f.store(true, Ordering::SeqCst);
+                // SAFETY: TerminateJobObject terminates all processes associated with the job object.
+                unsafe {
+                    windows_sys::Win32::System::JobObjects::TerminateJobObject(job_handle.0, 1);
+                }
+            }
+        });
+        Watchdog {
+            done: tx,
+            fired,
+            handle,
+        }
+    }
+
+    /// Disarm the watchdog and report whether the timeout fired.
+    pub fn disarm(self) -> bool {
+        let _ = self.done.send(());
+        let _ = self.handle.join();
+        self.fired.load(Ordering::SeqCst)
+    }
 }
 
 /// The last bytes of a run's stdout and stderr (`--show-output-on-failure`)
@@ -106,12 +176,19 @@ pub fn execute_and_measure(
     affinity: Option<&[usize]>,
     priority: crate::util::priority::Priority,
     capture: bool,
+    timeout: Option<std::time::Duration>,
 ) -> Result<TimerResult> {
     // On Linux the affinity is applied by the caller (pre_exec); on other
     // Unix systems --affinity is rejected during option validation. The
     // priority is also applied by the caller (pre_exec) on Unix.
     #[cfg(not(windows))]
     let _ = (affinity, priority);
+
+    #[cfg(not(windows))]
+    if timeout.is_some() {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
 
     #[cfg(windows)]
     {
@@ -140,6 +217,17 @@ pub fn execute_and_measure(
         unsafe { self::windows_timer::CPUTimer::start_suspended_process(&child) }
     };
 
+    let watchdog = timeout.map(|t| {
+        #[cfg(not(windows))]
+        {
+            Watchdog::arm(child.id(), t)
+        }
+        #[cfg(windows)]
+        {
+            Watchdog::arm(SendHandle(cpu_timer.raw_job_handle()), t)
+        }
+    });
+
     // --show-output-on-failure: drain stderr on another thread while stdout
     // is drained here, so that the child can't block on a full pipe
     let stderr_tail = child
@@ -165,6 +253,8 @@ pub fn execute_and_measure(
     let status = child.wait()?;
 
     let time_real = wallclock_timer.stop();
+    let timed_out = watchdog.is_some_and(|w| w.disarm());
+
     #[cfg(not(windows))]
     let (time_user, time_system, memory_usage_byte, counters) = (
         usage.user,
@@ -193,6 +283,7 @@ pub fn execute_and_measure(
         counters,
         status,
         captured,
+        timed_out,
     })
 }
 

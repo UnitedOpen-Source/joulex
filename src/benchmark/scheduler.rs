@@ -82,7 +82,9 @@ impl<'a> Scheduler<'a> {
             }
             let mut executor: Box<dyn Executor> = match kind {
                 ExecutorKind::Raw => Box::new(RawExecutor::new(self.options)),
-                ExecutorKind::Mock(shell) => Box::new(MockExecutor::new(shell.clone())),
+                ExecutorKind::Mock(shell) => {
+                    Box::new(MockExecutor::new(shell.clone(), self.options.timeout))
+                }
                 ExecutorKind::Shell(shell) => Box::new(ShellExecutor::new(shell, self.options)),
             };
             executor.calibrate()?;
@@ -199,6 +201,9 @@ impl<'a> Scheduler<'a> {
                         if crate::util::interrupt::interrupted() {
                             break 'warmup;
                         }
+                        if runner.timed_out {
+                            continue;
+                        }
                         match runner.run_warmup_iteration(w) {
                             Ok(_) => {
                                 if let Some(bar) = progress_bar.as_ref() {
@@ -235,6 +240,9 @@ impl<'a> Scheduler<'a> {
             for runner in &mut runners {
                 if crate::util::interrupt::interrupted() {
                     break;
+                }
+                if runner.timed_out {
+                    continue;
                 }
                 match runner.run_initial_measurement() {
                     Ok(()) => {
@@ -311,9 +319,9 @@ impl<'a> Scheduler<'a> {
                         break 'timing;
                     }
                     let run = if adaptive {
-                        runner.needs_more_runs(started, budget)
+                        !runner.timed_out && runner.needs_more_runs(started, budget)
                     } else {
-                        i < runner.count
+                        !runner.timed_out && i < runner.count
                     };
                     if run {
                         match runner.run_timed_iteration(i) {
@@ -350,7 +358,7 @@ impl<'a> Scheduler<'a> {
 
             // 6. Finish and collect results
             for runner in runners {
-                if runner.times_real.is_empty() {
+                if runner.times_real.is_empty() && !runner.timed_out {
                     if self.options.output_style != OutputStyleOption::Disabled {
                         crate::outln!(
                             "{}{}: {} (interrupted before completing any runs)",
@@ -504,6 +512,17 @@ impl<'a> Scheduler<'a> {
                     let (_, unit) = format_duration_unit(largest_mean, self.options.time_unit);
 
                     for item in others {
+                        if item.result.timed_out {
+                            let timeout_sec = item.result.timeout.unwrap_or(item.result.mean);
+                            let timeout_str = format_duration(timeout_sec, self.options.time_unit);
+                            crate::outln!(
+                                "    {} {}",
+                                colors::yellow(format!("> {timeout_str} (timeout)")),
+                                colors::magenta(&item.result.command_with_unused_parameters)
+                            );
+                            continue;
+                        }
+
                         let absolute = absolute_difference(reference.result, item.result, unit);
                         let stddev = if let Some(stddev) = item.relative_speed_stddev {
                             format!(" ± {}", colors::green(format!("{stddev:.2}")))
@@ -615,6 +634,21 @@ impl<'a> Scheduler<'a> {
                         .unwrap_or(0);
 
                     for item in annotated_results {
+                        if item.result.timed_out {
+                            let timeout_sec = item.result.timeout.unwrap_or(item.result.mean);
+                            let timeout_str = format_duration(timeout_sec, self.options.time_unit);
+                            crate::outln!(
+                                "  {}  {:<width$}",
+                                colors::yellow(format!(
+                                    "{:>21}",
+                                    format!("> {timeout_str} (timeout)")
+                                )),
+                                item.result.command_with_unused_parameters,
+                                width = max_cmd_len,
+                            );
+                            continue;
+                        }
+
                         let stddev_suffix = if item.is_reference {
                             "        ".into()
                         } else if let Some(stddev) = item.relative_speed_stddev {

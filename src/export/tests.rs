@@ -57,6 +57,7 @@ fn test_markup_export_auto_ms() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("sleep 2"),
@@ -91,6 +92,7 @@ fn test_markup_export_auto_ms() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -170,6 +172,7 @@ fn test_markup_export_auto_s() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -204,6 +207,7 @@ fn test_markup_export_auto_s() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -283,6 +287,7 @@ fn test_markup_export_manual_ms() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -317,6 +322,7 @@ fn test_markup_export_manual_ms() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -395,6 +401,7 @@ fn test_markup_export_manual_s() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("sleep 0.1"),
@@ -429,6 +436,7 @@ fn test_markup_export_manual_s() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -506,6 +514,7 @@ fn test_markup_export_zero_mean_displays_na() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("b"),
@@ -540,6 +549,7 @@ fn test_markup_export_zero_mean_displays_na() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 

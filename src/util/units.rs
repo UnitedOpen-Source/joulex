@@ -107,6 +107,45 @@ pub fn format_bytes(bytes: u64) -> String {
     }
 }
 
+/// Parse a human duration string (e.g. "500ms", "2s", "1m", "1.5s", "200µs", "200us") into `std::time::Duration`.
+pub fn parse_duration(s: &str) -> Result<std::time::Duration, String> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Err("duration cannot be empty".to_string());
+    }
+
+    // Split numeric prefix from unit suffix
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.' && c != '+' && c != '-')
+        .unwrap_or(s.len());
+
+    let (num_str, unit_str) = s.split_at(num_end);
+    let val: f64 = num_str
+        .parse()
+        .map_err(|e| format!("invalid number in duration: {e}"))?;
+
+    if !val.is_finite() || val <= 0.0 {
+        return Err("duration must be a positive number".to_string());
+    }
+
+    let multiplier = match unit_str.trim() {
+        "" | "s" | "sec" | "secs" | "second" | "seconds" => 1.0,
+        "ms" | "msec" | "milli" | "millisecond" | "milliseconds" => 1e-3,
+        "us" | "µs" | "usec" | "micro" | "microsecond" | "microseconds" => 1e-6,
+        "ns" | "nsec" | "nanosecond" | "nanoseconds" => 1e-9,
+        "m" | "min" | "mins" | "minute" | "minutes" => 60.0,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 3600.0,
+        unknown => return Err(format!("unknown duration unit '{unknown}'")),
+    };
+
+    let total_secs = val * multiplier;
+    if !total_secs.is_finite() || total_secs <= 0.0 {
+        return Err("duration must be a positive number".to_string());
+    }
+
+    Ok(std::time::Duration::from_secs_f64(total_secs))
+}
+
 #[test]
 fn test_unit_short_name() {
     assert_eq!("s", Unit::Second.short_name());
@@ -133,4 +172,26 @@ fn test_format_bytes() {
         "1.50 GB",
         format_bytes((1.5 * 1024.0 * 1024.0 * 1024.0) as u64)
     );
+}
+
+#[test]
+fn test_parse_duration() {
+    use std::time::Duration;
+
+    assert_eq!(parse_duration("500ms").unwrap(), Duration::from_millis(500));
+    assert_eq!(parse_duration("2s").unwrap(), Duration::from_secs(2));
+    assert_eq!(parse_duration("1m").unwrap(), Duration::from_secs(60));
+    assert_eq!(parse_duration("1.5s").unwrap(), Duration::from_millis(1500));
+    assert_eq!(parse_duration("200µs").unwrap(), Duration::from_micros(200));
+    assert_eq!(parse_duration("200us").unwrap(), Duration::from_micros(200));
+    assert_eq!(parse_duration("2").unwrap(), Duration::from_secs(2));
+    assert_eq!(parse_duration("1h").unwrap(), Duration::from_secs(3600));
+
+    assert!(parse_duration("").is_err());
+    assert!(parse_duration("0").is_err());
+    assert!(parse_duration("0s").is_err());
+    assert!(parse_duration("-2s").is_err());
+    assert!(parse_duration("inf").is_err());
+    assert!(parse_duration("nan").is_err());
+    assert!(parse_duration("2xyz").is_err());
 }

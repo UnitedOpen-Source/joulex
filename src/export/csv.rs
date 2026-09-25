@@ -86,16 +86,42 @@ impl Exporter for CsvExporter {
 
         for (i, res) in results.iter().enumerate() {
             let mut fields = vec![sanitize_csv_value(&res.command)];
-            for f in &[
-                res.mean,
-                res.stddev.unwrap_or(0.0),
-                res.median,
-                res.user,
-                res.system,
-                res.min,
-                res.max,
-            ] {
-                fields.push(Cow::Owned(f.to_string().into_bytes()))
+            if res.timed_out {
+                let timeout_sec = res.timeout.unwrap_or(res.mean);
+                let mean_val = format!(">{timeout_sec:.3} (timeout)");
+                fields.push(Cow::Owned(mean_val.into_bytes()));
+                let empty = || Cow::Borrowed(b"".as_slice());
+                if res.times.as_ref().is_none_or(|t| t.is_empty()) {
+                    fields.push(empty()); // stddev
+                    fields.push(empty()); // median
+                    fields.push(empty()); // user
+                    fields.push(empty()); // system
+                    fields.push(empty()); // min
+                    fields.push(empty()); // max
+                } else {
+                    for f in &[
+                        res.stddev.unwrap_or(0.0),
+                        res.median,
+                        res.user,
+                        res.system,
+                        res.min,
+                        res.max,
+                    ] {
+                        fields.push(Cow::Owned(f.to_string().into_bytes()))
+                    }
+                }
+            } else {
+                for f in &[
+                    res.mean,
+                    res.stddev.unwrap_or(0.0),
+                    res.median,
+                    res.user,
+                    res.system,
+                    res.min,
+                    res.max,
+                ] {
+                    fields.push(Cow::Owned(f.to_string().into_bytes()))
+                }
             }
             for param_name in &all_param_names {
                 let val = res
@@ -176,6 +202,7 @@ fn test_csv() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("command_b"),
@@ -215,6 +242,7 @@ fn test_csv() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -275,6 +303,7 @@ fn test_csv_formula_injection_sanitization() {
         precision: None,
         shell: None,
         baseline: None,
+        ..Default::default()
     }];
 
     let actual = String::from_utf8(
@@ -364,6 +393,7 @@ fn test_csv_with_reference_command() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("param_cmd"),
@@ -402,6 +432,7 @@ fn test_csv_with_reference_command() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 
@@ -467,6 +498,7 @@ fn test_csv_heterogeneous_parameters() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
         BenchmarkResult {
             command: String::from("cmd_b"),
@@ -505,6 +537,7 @@ fn test_csv_heterogeneous_parameters() {
             precision: None,
             shell: None,
             baseline: None,
+            ..Default::default()
         },
     ];
 

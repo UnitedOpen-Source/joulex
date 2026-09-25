@@ -14,10 +14,14 @@ pub struct BenchmarkResultWithRelativeSpeed<'a> {
 }
 
 pub fn compare_mean_time(l: &BenchmarkResult, r: &BenchmarkResult) -> Ordering {
-    l.mean.partial_cmp(&r.mean).unwrap_or(Ordering::Equal)
+    match (l.timed_out, r.timed_out) {
+        (true, false) => Ordering::Greater,
+        (false, true) => Ordering::Less,
+        _ => l.mean.partial_cmp(&r.mean).unwrap_or(Ordering::Equal),
+    }
 }
 
-/// The result with the smallest mean.
+/// The result with the smallest mean, excluding timed-out benchmarks if possible.
 ///
 /// # Panics
 /// If `results` is empty. Every caller checks this first (an empty result set
@@ -25,7 +29,9 @@ pub fn compare_mean_time(l: &BenchmarkResult, r: &BenchmarkResult) -> Ordering {
 pub fn fastest_of(results: &[BenchmarkResult]) -> &BenchmarkResult {
     results
         .iter()
+        .filter(|r| !r.timed_out)
         .min_by(|&l, &r| compare_mean_time(l, r))
+        .or_else(|| results.iter().min_by(|&l, &r| compare_mean_time(l, r)))
         .expect("at least one benchmark result")
 }
 
@@ -39,6 +45,16 @@ fn compute_relative_speeds<'a>(
         .map(|result| {
             let is_reference = std::ptr::eq(result, reference);
             let relative_ordering = compare_mean_time(result, reference);
+
+            if result.timed_out {
+                return BenchmarkResultWithRelativeSpeed {
+                    result,
+                    relative_speed: f64::NAN,
+                    relative_speed_stddev: None,
+                    is_reference,
+                    relative_ordering: Ordering::Greater,
+                };
+            }
 
             if result.mean == 0.0 {
                 return BenchmarkResultWithRelativeSpeed {
@@ -209,6 +225,7 @@ fn create_result(name: &str, mean: Scalar) -> BenchmarkResult {
         precision: None,
         shell: None,
         baseline: None,
+        ..Default::default()
     }
 }
 

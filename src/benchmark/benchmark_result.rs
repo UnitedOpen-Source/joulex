@@ -136,6 +136,14 @@ pub struct BenchmarkResult {
     /// `--subtract`: the baseline whose mean was subtracted from every run
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub baseline: Option<Baseline>,
+
+    /// Whether this benchmark timed out (--timeout <DURATION>)
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub timed_out: bool,
+
+    /// The configured timeout duration in seconds, if --timeout was used
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<Second>,
 }
 
 /// `--subtract CMD`: the measured baseline.
