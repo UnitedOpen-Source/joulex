@@ -268,10 +268,9 @@ fn summary_table(
     for entry in &entries {
         let r = entry.result;
         let value = |v: f64| format_duration_value(v, Some(unit)).0;
-        let stddev = r
-            .stddev
-            .map(|s| format!(" ± {}", value(s)))
-            .unwrap_or_default();
+        let (mean, stddev) =
+            crate::output::format::format_mean_stddev_values(r.mean, r.stddev, unit);
+        let stddev = stddev.map(|s| format!(" ± {s}")).unwrap_or_default();
         let relative = if entry.relative_speed.is_finite() {
             format!("{:.2}", entry.relative_speed)
         } else {
@@ -281,7 +280,7 @@ fn summary_table(
             table,
             "<tr><td><code>{}</code></td><td>{}{}</td><td>{}</td><td>{}</td><td>{}</td></tr>",
             escape_html(&r.command_with_unused_parameters),
-            value(r.mean),
+            mean,
             stddev,
             value(r.min),
             value(r.max),

@@ -23,14 +23,70 @@ impl Unit {
         }
     }
 
-    /// Returns the Second value formatted for the Unit.
+    /// Returns the Second value formatted for the Unit, with the decimals of
+    /// `--precision` (default: 3 for seconds, 1 for ms and µs).
     pub fn format(self, value: Second) -> String {
+        let decimals = match precision() {
+            Precision::Fixed(decimals) => decimals,
+            Precision::Default | Precision::Auto => self.default_decimals(),
+        };
+        self.format_decimals(value, decimals)
+    }
+
+    /// The Second value in this unit, with the given number of decimals.
+    pub fn format_decimals(self, value: Second, decimals: usize) -> String {
+        format!("{:.decimals$}", value * self.per_second())
+    }
+
+    /// How many of this unit make one second.
+    pub fn per_second(self) -> f64 {
         match self {
-            Unit::Second => format!("{value:.3}"),
-            Unit::MilliSecond => format!("{:.1}", value * 1e3),
-            Unit::MicroSecond => format!("{:.1}", value * 1e6),
+            Unit::Second => 1.0,
+            Unit::MilliSecond => 1e3,
+            Unit::MicroSecond => 1e6,
         }
     }
+
+    fn default_decimals(self) -> usize {
+        match self {
+            Unit::Second => 3,
+            Unit::MilliSecond | Unit::MicroSecond => 1,
+        }
+    }
+}
+
+/// `--precision`: number of decimals in human-readable output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Precision {
+    /// 3 decimals for seconds, 1 for milliseconds and microseconds
+    #[default]
+    Default,
+    /// A fixed number of decimals
+    Fixed(usize),
+    /// Mean and σ with the decimals that keep two significant digits of σ
+    Auto,
+}
+
+static PRECISION: std::sync::OnceLock<Precision> = std::sync::OnceLock::new();
+
+/// Set the precision of human-readable output, once, at startup.
+pub fn set_precision(precision: Precision) {
+    let _ = PRECISION.set(precision);
+}
+
+pub fn precision() -> Precision {
+    PRECISION.get().copied().unwrap_or_default()
+}
+
+/// Decimals that keep two significant digits of `stddev` (already converted to
+/// the display unit), e.g. 1.488 → 1 ("1.5"), 0.041 → 3 ("0.041"), 23.4 → 0.
+/// `None` if σ is zero or not finite.
+pub fn auto_decimals(stddev: f64) -> Option<usize> {
+    if !(stddev.is_finite() && stddev > 0.0) {
+        return None;
+    }
+    let exponent = stddev.log10().floor() as i32;
+    Some((1 - exponent).clamp(0, 9) as usize)
 }
 
 /// Format a byte count into a human-readable string (B, KB, MB, GB).

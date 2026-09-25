@@ -65,6 +65,13 @@ fn run() -> Result<()> {
     }
 
     let mut options = Options::from_cli_arguments(&cli_arguments)?;
+    if let Some(precision) = cli_arguments.get_one::<String>("precision") {
+        util::units::set_precision(match precision.as_str() {
+            "auto" => util::units::Precision::Auto,
+            // Validated by clap
+            decimals => util::units::Precision::Fixed(decimals.parse().unwrap_or(3)),
+        });
+    }
     let commands = Commands::from_cli_arguments(&cli_arguments)?;
     let export_manager = ExportManager::from_cli_arguments(
         &cli_arguments,
