@@ -72,6 +72,8 @@ pub enum OptionsError<'a> {
     InvalidAffinity(String),
     #[error("Invalid '--priority': {0}")]
     InvalidPriority(String),
+    #[error("Invalid '--target-precision' '{0}': expected a positive percentage such as '1%'")]
+    InvalidTargetPrecision(String),
 }
 
 #[derive(Debug, Error)]

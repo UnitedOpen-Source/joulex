@@ -255,13 +255,31 @@ impl<'a> Scheduler<'a> {
                 None
             };
 
-            // 4. Interleaved timing iterations
-            'timing: for i in 1..max_count {
+            // 4. Interleaved timing iterations. With --target-precision, each
+            // command keeps running until its mean is precise enough; the
+            // commands share the wall-clock time, and so the time budget.
+            let adaptive = self.options.target_precision.is_some();
+            let started = std::time::Instant::now();
+            let budget = self.options.max_benchmarking_time * runners.len() as f64;
+            let mut i = 1;
+            'timing: loop {
+                if adaptive {
+                    if !runners.iter().any(|r| r.needs_more_runs(started, budget)) {
+                        break;
+                    }
+                } else if i >= max_count {
+                    break;
+                }
                 for runner in &mut runners {
                     if crate::util::interrupt::interrupted() {
                         break 'timing;
                     }
-                    if i < runner.count {
+                    let run = if adaptive {
+                        runner.needs_more_runs(started, budget)
+                    } else {
+                        i < runner.count
+                    };
+                    if run {
                         match runner.run_timed_iteration(i) {
                             Ok(()) => {
                                 if let Some(bar) = progress_bar.as_ref() {
@@ -278,6 +296,7 @@ impl<'a> Scheduler<'a> {
                         }
                     }
                 }
+                i += 1;
             }
 
             if let Some(bar) = progress_bar.as_ref() {
