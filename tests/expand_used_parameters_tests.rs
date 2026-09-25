@@ -3,6 +3,7 @@
 mod common;
 use common::hyperfine;
 
+#[cfg(unix)]
 use predicates::prelude::*;
 
 fn benchmark_lines(output: &[u8]) -> Vec<String> {
