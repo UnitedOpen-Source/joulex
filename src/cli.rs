@@ -754,6 +754,7 @@ pub fn build_command() -> Command {
             Arg::new("no-off-cpu-warning")
                 .long("no-off-cpu-warning")
                 .action(ArgAction::SetTrue)
+                .hide(true)
                 .help("Suppress off-CPU time warnings (for I/O- or sleep-bound commands).")
         )
         .arg(
@@ -783,7 +784,9 @@ pub fn build_command() -> Command {
             Arg::new("allow-setup-with-round-robin")
                 .long("allow-setup-with-round-robin")
                 .action(ArgAction::SetTrue)
-                .help("Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling.")
+                .help("Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling. \
+                       Note: setup/cleanup runs only once per batch of runs for a command, not before every \
+                       single iteration of interleaved commands.")
         )
 }
 

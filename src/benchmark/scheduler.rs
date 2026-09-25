@@ -566,18 +566,8 @@ impl<'a> Scheduler<'a> {
                             } else {
                                 let ref_cmd = reference_command.unwrap();
                                 let desc = match item.relative_ordering {
-                                    Ordering::Less => {
-                                        format!(
-                                            "{:.2} times faster than {ref_cmd}",
-                                            item.relative_speed
-                                        )
-                                    }
-                                    Ordering::Greater => {
-                                        format!(
-                                            "{:.2} times slower than {ref_cmd}",
-                                            item.relative_speed
-                                        )
-                                    }
+                                    Ordering::Less => format!("faster than {ref_cmd}"),
+                                    Ordering::Greater => format!("slower than {ref_cmd}"),
                                     Ordering::Equal => format!("as fast as {ref_cmd}"),
                                 };
                                 format!("  {desc}")

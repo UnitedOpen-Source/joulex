@@ -849,11 +849,17 @@ impl<'a> BenchmarkRunner<'a> {
             None
         };
 
+        let total_runs = self.times_real.len();
         let valid_energy: Vec<f64> = self.energy_measurements.into_iter().flatten().collect();
         let (mean_energy, mean_watts, energy_all) = if !valid_energy.is_empty() {
             let m_j = mean(&valid_energy);
             let m_w = if t_mean > 0.0 { m_j / t_mean } else { 0.0 };
-            (Some(m_j), Some(m_w), Some(valid_energy))
+            let energy_all = if valid_energy.len() == total_runs {
+                Some(valid_energy)
+            } else {
+                None
+            };
+            (Some(m_j), Some(m_w), energy_all)
         } else {
             (None, None, None)
         };
@@ -1214,10 +1220,66 @@ fn relative_spread(times: &[f64]) -> f64 {
     (max(times) - min(times)) / median
 }
 
-#[test]
-fn test_relative_spread() {
-    assert_eq!(relative_spread(&[]), 0.0);
-    assert_eq!(relative_spread(&[1.0, 1.0, 1.0]), 0.0);
-    assert!((relative_spread(&[0.99, 1.0, 1.01]) - 0.02).abs() < 1e-12);
-    assert!((relative_spread(&[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-12);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::benchmark::executor::MockExecutor;
+
+    #[test]
+    fn test_relative_spread() {
+        assert_eq!(relative_spread(&[]), 0.0);
+        assert_eq!(relative_spread(&[1.0, 1.0, 1.0]), 0.0);
+        assert!((relative_spread(&[0.99, 1.0, 1.01]) - 0.02).abs() < 1e-12);
+        assert!((relative_spread(&[1.0, 2.0, 3.0]) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_energy_vector_dropped_when_incomplete() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.2];
+        runner.times_user = vec![0.05, 0.05];
+        runner.times_system = vec![0.05, 0.05];
+        runner.memory_usage_byte = vec![100, 100];
+        runner.energy_measurements = vec![Some(1.5), None]; // one measurement missing
+        runner.exit_codes = vec![Some(0), Some(0)];
+        runner.resource_counters = vec![None, None];
+        runner.all_succeeded = true;
+        runner.count = 2;
+
+        let result = runner.finish(false).unwrap();
+        // Since one sample is missing, per-run energy_joules is dropped to prevent misalignment
+        assert_eq!(result.energy_joules, None);
+        // But aggregate mean energy is still computed from the valid samples
+        assert_eq!(result.mean_energy_joules, Some(1.5));
+    }
+
+    #[test]
+    fn test_energy_vector_preserved_when_complete() {
+        let cmd = Command::new(None, "true");
+        let options = Options {
+            command_output_policies: vec![CommandOutputPolicy::Null],
+            ..Default::default()
+        };
+        let executor = MockExecutor::new(None);
+        let mut runner = BenchmarkRunner::new(0, 0, &cmd, &options, &executor);
+        runner.times_real = vec![0.1, 0.2];
+        runner.times_user = vec![0.05, 0.05];
+        runner.times_system = vec![0.05, 0.05];
+        runner.memory_usage_byte = vec![100, 100];
+        runner.energy_measurements = vec![Some(1.5), Some(2.5)]; // all valid
+        runner.exit_codes = vec![Some(0), Some(0)];
+        runner.resource_counters = vec![None, None];
+        runner.all_succeeded = true;
+        runner.count = 2;
+
+        let result = runner.finish(false).unwrap();
+        assert_eq!(result.energy_joules, Some(vec![1.5, 2.5]));
+        assert_eq!(result.mean_energy_joules, Some(2.0));
+    }
 }
