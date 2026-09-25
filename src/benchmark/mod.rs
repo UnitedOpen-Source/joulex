@@ -607,45 +607,74 @@ impl<'a> BenchmarkRunner<'a> {
                 );
             }
 
+            // Mean and σ with consistent decimals ('--precision auto')
+            let (mean_display, stddev_display) = match t_stddev {
+                Some(stddev) => {
+                    let (mean_value, stddev_value) =
+                        crate::output::format::format_mean_stddev_values(
+                            t_mean,
+                            Some(stddev),
+                            time_unit,
+                        );
+                    let unit_name = time_unit.short_name();
+                    (
+                        format!("{mean_value} {unit_name}"),
+                        stddev_value.map(|s| format!("{s} {unit_name}")),
+                    )
+                }
+                None => (mean_str.clone(), None),
+            };
+            let cold_str = first_run
+                .as_ref()
+                .map(|cold| format_duration(cold.time, Some(time_unit)));
+            // Column width: 8 fits the default precision ("999.9 ms"); more
+            // decimals (--precision) widen all columns of this block alike
+            let width = [
+                Some(&mean_display),
+                stddev_display.as_ref(),
+                Some(&min_str),
+                Some(&median_str),
+                Some(&max_str),
+                cold_str.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|s| s.chars().count())
+            .max()
+            .unwrap_or(0)
+            .max(8);
+
             if let Some(cold) = &first_run {
                 // Aligned with the columns of the "Time" line below
                 let details = match (cold.user, cold.system) {
                     (Some(user), Some(system)) => format!(
-                        "{:15}[User: {}, System: {}]",
+                        "{:pad$}[User: {}, System: {}]",
                         "",
                         colors::blue(format_duration(user, Some(time_unit))),
-                        colors::blue(format_duration(system, Some(time_unit)))
+                        colors::blue(format_duration(system, Some(time_unit))),
+                        // " ± " + σ column + 4 spaces, as in the Time line
+                        pad = width + 7
                     ),
                     _ => String::new(),
                 };
                 crate::outln!(
-                    "  {:<21}{:>8}{}",
+                    "  {:<21}{:>width$}{}",
                     if cold.warmup {
                         "Cold (warmup 1):"
                     } else {
                         "Cold (1st run):"
                     },
-                    colors::yellow(format_duration(cold.time, Some(time_unit))).bold(),
+                    colors::yellow(cold_str.clone().unwrap_or_default()).bold(),
                     details
                 );
             }
 
-            if let Some(stddev) = t_stddev {
-                // Mean and σ with consistent decimals ('--precision auto')
-                let (mean_value, stddev_value) = crate::output::format::format_mean_stddev_values(
-                    t_mean,
-                    Some(stddev),
-                    time_unit,
-                );
-                let unit_name = time_unit.short_name();
-                let mean_str = format!("{mean_value} {unit_name}");
-                let stddev_str = format!("{} {unit_name}", stddev_value.unwrap_or_default());
-
+            if let Some(stddev_str) = stddev_display {
                 crate::outln!(
-                    "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",
+                    "  Time ({} ± {}):     {:>width$} ± {:>width$}    [User: {}, System: {}{}{}]",
                     colors::green("mean").bold(),
                     colors::green("σ"),
-                    colors::green(mean_str).bold(),
+                    colors::green(mean_display).bold(),
                     colors::green(stddev_str),
                     colors::blue(user_str),
                     colors::blue(system_str),
@@ -654,7 +683,7 @@ impl<'a> BenchmarkRunner<'a> {
                 );
 
                 crate::outln!(
-                    "  Range ({} … {} … {}):   {:>8} … {:>8} … {:>8}    {}",
+                    "  Range ({} … {} … {}):   {:>width$} … {:>width$} … {:>width$}    {}",
                     colors::cyan("min"),
                     colors::yellow("median"),
                     colors::purple("max"),
@@ -670,10 +699,10 @@ impl<'a> BenchmarkRunner<'a> {
                     String::new()
                 };
                 crate::outln!(
-                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
+                    "  Time ({} ≡):        {:>width$}  {:>width$}     [User: {}, System: {}{}{}]{}",
                     colors::green("abs").bold(),
                     colors::green(mean_str).bold(),
-                    "        ", // alignment
+                    "", // alignment
                     colors::blue(user_str),
                     colors::blue(system_str),
                     colors::blue(cpu_str),

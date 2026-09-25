@@ -71,3 +71,41 @@ fn invalid_precision_is_rejected() {
             .stderr(predicate::str::contains("expected a number of decimals"));
     }
 }
+
+/// With more decimals, the columns of the Cold and Time lines stay aligned
+/// (#195).
+#[test]
+fn columns_stay_aligned_with_more_decimals() {
+    for precision in ["1", "3", "5"] {
+        let output = hyperfine()
+            .args([
+                "--debug-mode",
+                "--runs=3",
+                "--style=basic",
+                "--first-run=separate",
+            ])
+            .arg(format!("--precision={precision}"))
+            .arg("sleep 0.0123")
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let stdout = String::from_utf8(output).unwrap();
+        let line = |prefix: &str| {
+            stdout
+                .lines()
+                .find(|l| l.trim_start().starts_with(prefix))
+                .unwrap()
+                .to_string()
+        };
+        let (cold, time) = (line("Cold"), line("Time"));
+        let column = |l: &str, needle: &str| {
+            l.chars().count() - l[l.find(needle).unwrap()..].chars().count()
+        };
+        // The values end in the same column ...
+        assert_eq!(column(&cold, " ms "), column(&time, " ms "), "{stdout}");
+        // ... and so does the "[User" block
+        assert_eq!(column(&cold, "[User"), column(&time, "[User"), "{stdout}");
+    }
+}
