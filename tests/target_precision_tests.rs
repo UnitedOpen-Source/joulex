@@ -6,7 +6,7 @@ use common::hyperfine;
 use predicates::prelude::*;
 use serde_json::Value;
 
-fn run_count(args: &[&str]) -> usize {
+fn result(args: &[&str]) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
     hyperfine()
@@ -16,7 +16,25 @@ fn run_count(args: &[&str]) -> usize {
         .assert()
         .success();
     let json: Value = serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
-    json["results"][0]["times"].as_array().unwrap().len()
+    json["results"][0].clone()
+}
+
+fn run_count(args: &[&str]) -> usize {
+    result(args)["times"].as_array().unwrap().len()
+}
+
+#[test]
+fn the_json_export_records_the_precision() {
+    let precision = &result(&["--debug-mode", "--target-precision=1%", "sleep 0.1"])["precision"];
+    assert_eq!(precision["target"], 0.01);
+    assert_eq!(precision["reached"], 0.0);
+    assert_eq!(precision["confidence"], 0.95);
+    assert_eq!(precision["met"], true);
+
+    // Only with --target-precision
+    assert!(result(&["--debug-mode", "--runs=3", "sleep 0.1"])
+        .get("precision")
+        .is_none());
 }
 
 #[test]
@@ -106,6 +124,14 @@ mod unix {
             .stderr(predicate::str::contains(
                 "The target precision of ±0.1% was not reached after 12 runs",
             ));
+    }
+
+    #[test]
+    fn an_unmet_target_is_recorded_in_the_json() {
+        let result = result(&["--target-precision=0.1%", "--max-runs=8", NOISY]);
+        let precision = &result["precision"];
+        assert_eq!(precision["met"], false);
+        assert!(precision["reached"].as_f64().unwrap() > 0.001);
     }
 
     #[test]

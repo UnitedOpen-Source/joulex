@@ -123,6 +123,24 @@ pub struct BenchmarkResult {
     /// `--aggregate-parameter-runs`), and the statistics per value
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub per_run_parameters: Option<PerRunParameterValues>,
+
+    /// `--target-precision`: the target and the precision reached
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precision: Option<PrecisionReached>,
+}
+
+/// `--target-precision`: how precisely the mean is known.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub struct PrecisionReached {
+    /// The target half-width of the confidence interval, relative to the mean
+    pub target: f64,
+    /// The half-width reached (`None` if it could not be computed, e.g. with
+    /// fewer than 2 runs)
+    pub reached: Option<f64>,
+    /// The confidence level of the interval
+    pub confidence: f64,
+    /// Whether the target was reached
+    pub met: bool,
 }
 
 /// Per-run parameter values, aligned with `times`, and statistics per value.

@@ -1036,6 +1036,14 @@ impl<'a> BenchmarkRunner<'a> {
             first_run,
             diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
             per_run_parameters,
+            precision: precision_reached.map(|(target, reached)| {
+                benchmark_result::PrecisionReached {
+                    target,
+                    reached,
+                    confidence: 0.95,
+                    met: reached.is_some_and(|r| r <= target),
+                }
+            }),
         })
     }
 }
