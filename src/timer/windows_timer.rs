@@ -58,6 +58,19 @@ pub fn set_affinity(child: &process::Child, mask: usize) -> std::io::Result<()> 
     Ok(())
 }
 
+/// Set the priority class of the (still suspended) `child`.
+pub fn set_priority_class(child: &process::Child, class: u32) -> std::io::Result<()> {
+    use windows_sys::Win32::System::Threading::SetPriorityClass;
+
+    // SAFETY: the handle belongs to our own child process, which is still alive
+    // (suspended) at this point.
+    let ret = unsafe { SetPriorityClass(child.as_raw_handle() as HANDLE, class) };
+    if ret == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 pub struct CPUTimer {
     job_object: HANDLE,
 }

@@ -307,6 +307,9 @@ pub struct Options {
     /// CPUs to pin every benchmarked process to (--affinity)
     pub affinity: Option<Vec<usize>>,
 
+    /// Scheduling priority of every benchmarked process (--priority)
+    pub priority: crate::util::priority::Priority,
+
     /// Allow combining parametrized '--setup' or '--cleanup' with round-robin scheduling
     pub allow_setup_with_round_robin: bool,
 }
@@ -343,6 +346,7 @@ impl Default for Options {
             discard_outliers: None,
             show_resource_usage: false,
             affinity: None,
+            priority: crate::util::priority::Priority::default(),
             allow_setup_with_round_robin: false,
         }
     }
@@ -595,6 +599,10 @@ impl Options {
                 Ok(cpus)
             })
             .transpose()?;
+        if let Some(priority) = matches.get_one::<String>("priority") {
+            options.priority = crate::util::priority::Priority::parse(priority)
+                .map_err(|e| OptionsError::InvalidPriority(format!("{e:#}")))?;
+        }
         options.discard_outliers = matches
             .get_one::<String>("discard-outliers")
             .map(|value| match value.as_str() {

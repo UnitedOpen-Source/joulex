@@ -187,6 +187,10 @@ Perform \fINUM\fP warmup runs before the actual benchmark to fill caches.
 .IP
 How to treat the first (cold) timing run of each command: \fIinclude\fP it in the statistics (default), report it \fIseparate\fPly on a "Cold (1st run)" line and as "first_run" in the JSON export and exclude it from the statistics, or \fIdiscard\fP it silently. With \fIseparate\fP and \fIdiscard\fP, one extra run is performed so that the requested number of runs is still measured. With \fB\-\-warmup\fR, \fIseparate\fP reports the first warmup run (wall-clock time only) and excludes no timing run.
 .HP
+\fB\-\-priority\fR \fIPOLICY\fP
+.IP
+Scheduling priority of every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR): \fInormal\fP (default, inherited), \fIhigh\fP (nice \-20 on Linux and macOS, HIGH_PRIORITY_CLASS on Windows), \fIidle\fP (SCHED_IDLE on Linux, nice 19 on macOS, IDLE_PRIORITY_CLASS on Windows) or \fIrealtime\fP (SCHED_FIFO at the maximum priority on Linux, REALTIME_PRIORITY_CLASS on Windows; not available on macOS). \fIhigh\fP and \fIrealtime\fP need privileges: root or the CAP_SYS_NICE capability on Linux, root on macOS, administrator rights on Windows. A \fIrealtime\fP command that never blocks can starve the rest of the system.
+.HP
 \fB\-m\fR, \fB\-\-min\-runs\fR \fINUM\fP
 .IP
 Perform at least \fINUM\fP runs for each command. Default: 10.
