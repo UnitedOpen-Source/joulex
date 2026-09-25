@@ -605,25 +605,8 @@ impl<'a> BenchmarkRunner<'a> {
                 );
             }
 
-            if self.times_real.len() == 1 {
-                let suffix = if !excluded.is_empty() {
-                    format!("    {}", num_str.dimmed())
-                } else {
-                    String::new()
-                };
-                println!(
-                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
-                    colors::green("abs").bold(),
-                    colors::green(mean_str).bold(),
-                    "        ", // alignment
-                    colors::blue(user_str),
-                    colors::blue(system_str),
-                    colors::blue(cpu_str),
-                    colors::blue(mem_str),
-                    suffix,
-                );
-            } else {
-                let stddev_str = format_duration(t_stddev.unwrap(), Some(time_unit));
+            if let Some(stddev) = t_stddev {
+                let stddev_str = format_duration(stddev, Some(time_unit));
 
                 println!(
                     "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",
@@ -646,6 +629,23 @@ impl<'a> BenchmarkRunner<'a> {
                     colors::yellow(median_str),
                     colors::purple(max_str),
                     num_str.dimmed()
+                );
+            } else {
+                let suffix = if !excluded.is_empty() {
+                    format!("    {}", num_str.dimmed())
+                } else {
+                    String::new()
+                };
+                println!(
+                    "  Time ({} ≡):        {:>8}  {:>8}     [User: {}, System: {}{}{}]{}",
+                    colors::green("abs").bold(),
+                    colors::green(mean_str).bold(),
+                    "        ", // alignment
+                    colors::blue(user_str),
+                    colors::blue(system_str),
+                    colors::blue(cpu_str),
+                    colors::blue(mem_str),
+                    suffix,
                 );
             }
 

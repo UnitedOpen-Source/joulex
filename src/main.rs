@@ -47,7 +47,8 @@ fn run() -> Result<()> {
 
     // Enabled ANSI colors on Windows 10
     #[cfg(windows)]
-    colored::control::set_virtual_terminal(true).unwrap();
+    // Fails on consoles without ANSI support; the output is then uncolored
+    let _ = colored::control::set_virtual_terminal(true);
 
     let cli_arguments = get_cli_arguments(env::args_os());
 

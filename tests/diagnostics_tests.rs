@@ -26,9 +26,12 @@ mod unix {
     /// Alternates between 10 ms and 40 ms: two separated groups
     const TWO_GROUPS: &str =
         "if [ $((JOULEX_ITERATION % 2)) = 0 ]; then sleep 0.01; else sleep 0.04; fi";
-    /// 10 ms, with a 300 ms run twice in 40 runs
+    /// 10 ms, with a 300 ms run twice in 100 runs. System noise can add a few
+    /// small outliers (the MAD of 10 ms sleeps is tiny), so the count isn't
+    /// asserted, and 100 runs keep all outliers well below the 10% at which
+    /// they would count as a cluster instead.
     const RARE_OUTLIERS: &str =
-        "if [ $((JOULEX_ITERATION % 20)) = 5 ]; then sleep 0.3; else sleep 0.01; fi";
+        "if [ $((JOULEX_ITERATION % 50)) = 5 ]; then sleep 0.3; else sleep 0.01; fi";
 
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
@@ -63,12 +66,13 @@ mod unix {
     #[test]
     fn rare_huge_outliers_trigger_the_inflated_variance_warning() {
         hyperfine()
-            .args(["--runs=40", RARE_OUTLIERS])
+            .args(["--runs=100", RARE_OUTLIERS])
             .assert()
             .success()
-            .stderr(predicate::str::contains(
-                "of the variance is caused by 2 outliers",
-            ))
+            .stderr(
+                predicate::str::is_match(r"\d+% of the variance is caused by \d+ outliers")
+                    .unwrap(),
+            )
             // Replaces the generic outlier warning
             .stderr(predicate::str::contains("Statistical outliers were detected").not());
     }

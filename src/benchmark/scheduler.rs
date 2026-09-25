@@ -423,7 +423,10 @@ impl<'a> Scheduler<'a> {
                 SortOrder::MeanTime => {
                     println!("{}", summary_title.bold());
 
-                    let reference = annotated_results.iter().find(|r| r.is_reference).unwrap();
+                    // `compute_with_check_from_reference` marks exactly one entry
+                    let Some(reference) = annotated_results.iter().find(|r| r.is_reference) else {
+                        return;
+                    };
                     let others = annotated_results.iter().filter(|r| !r.is_reference);
 
                     println!(

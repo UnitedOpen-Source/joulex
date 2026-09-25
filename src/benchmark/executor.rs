@@ -14,7 +14,7 @@ use crate::util::units::Second;
 use super::timing_result::TimingResult;
 
 use crate::stats::basic::mean;
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 
 pub enum BenchmarkIteration {
     NonBenchmarkRun,
@@ -343,7 +343,8 @@ impl Executor for ShellExecutor<'_> {
     }
 
     fn time_overhead(&self) -> Second {
-        self.shell_spawning_time.unwrap().time_real
+        // Zero before `calibrate()` has measured the shell spawning time
+        self.shell_spawning_time.map_or(0.0, |t| t.time_real)
     }
 }
 
@@ -357,13 +358,20 @@ impl MockExecutor {
         MockExecutor { shell }
     }
 
-    fn extract_time<S: AsRef<str>>(sleep_command: S) -> Second {
-        assert!(sleep_command.as_ref().starts_with("sleep "));
-        sleep_command
-            .as_ref()
-            .trim_start_matches("sleep ")
-            .parse::<Second>()
-            .unwrap()
+    /// `--debug-mode` doesn't run anything: it only understands commands of
+    /// the form `sleep <seconds>` and reports exactly that time.
+    fn extract_time<S: AsRef<str>>(sleep_command: S) -> Result<Second> {
+        let command = sleep_command.as_ref();
+        command
+            .strip_prefix("sleep ")
+            .and_then(|seconds| seconds.trim().parse::<Second>().ok())
+            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+            .ok_or_else(|| {
+                anyhow!(
+                    "'--debug-mode' only simulates commands of the form 'sleep <seconds>', \
+                     got '{command}'"
+                )
+            })
     }
 }
 
@@ -389,7 +397,7 @@ impl Executor for MockExecutor {
 
         Ok((
             TimingResult {
-                time_real: Self::extract_time(command.get_command_line()),
+                time_real: Self::extract_time(command.get_command_line())?,
                 time_user: 0.0,
                 time_system: 0.0,
                 memory_usage_byte: 0,
@@ -401,20 +409,28 @@ impl Executor for MockExecutor {
     }
 
     fn calibrate(&mut self) -> Result<()> {
+        // Validate the simulated shell (`--debug-mode --shell 'sleep …'`), so
+        // that `time_overhead` can't fail later
+        if let Some(shell) = &self.shell {
+            Self::extract_time(shell)?;
+        }
         Ok(())
     }
 
     fn time_overhead(&self) -> Second {
-        match &self.shell {
-            None => 0.0,
-            Some(shell) => Self::extract_time(shell),
-        }
+        self.shell
+            .as_ref()
+            .and_then(|shell| Self::extract_time(shell).ok())
+            .unwrap_or(0.0)
     }
 }
 
 #[test]
 fn test_mock_executor_extract_time() {
-    assert_eq!(MockExecutor::extract_time("sleep 0.1"), 0.1);
+    assert_eq!(MockExecutor::extract_time("sleep 0.1").unwrap(), 0.1);
+    for invalid in ["echo hi", "sleep", "sleep abc", "sleep -1", "sleep inf"] {
+        assert!(MockExecutor::extract_time(invalid).is_err(), "{invalid}");
+    }
 }
 
 #[test]
