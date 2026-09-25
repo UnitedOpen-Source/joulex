@@ -28,6 +28,7 @@ pub mod outlier_detection;
 pub mod output;
 pub mod parameter;
 pub mod stats;
+pub mod system_check;
 pub mod timer;
 pub mod util;
 
@@ -94,6 +95,20 @@ fn run() -> Result<()> {
         );
     }
 
+    if let Some(mode) = cli_arguments.get_one::<String>("check-system") {
+        let checks = system_check::run_checks();
+        let passed = system_check::all_passed(&checks);
+        if options.output_style != options::OutputStyleOption::Disabled {
+            println!("{}", system_check::report(&checks));
+        } else if mode == "strict" && !passed {
+            // '--style none' hides the report, but a failure must be explained
+            eprint!("{}", system_check::report(&checks));
+        }
+        if mode == "strict" && !passed {
+            return Err(error::SystemCheckFailed.into());
+        }
+    }
+
     let mut scheduler = Scheduler::new(&commands, &options, &export_manager);
     scheduler.add_imported_results(imported_results);
     scheduler.run_benchmarks()?;
@@ -113,6 +128,10 @@ fn main() {
         Err(e) => {
             if e.is::<crate::error::Interrupted>() {
                 std::process::exit(130);
+            }
+            if e.is::<crate::error::SystemCheckFailed>() {
+                eprintln!("{} {:#}", colors::red("Error:"), e);
+                std::process::exit(4);
             }
             eprintln!("{} {:#}", colors::red("Error:"), e);
             if crate::util::interrupt::interrupted() {

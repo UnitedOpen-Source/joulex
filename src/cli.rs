@@ -660,6 +660,29 @@ pub fn build_command() -> Command {
                        efficiency cores. Linux and Windows only."),
         )
         .arg(
+            Arg::new("check-system")
+                .long("check-system")
+                .action(ArgAction::Set)
+                .value_name("MODE")
+                .num_args(0..=1)
+                .require_equals(true)
+                .default_missing_value("warn")
+                .value_parser(["warn", "strict"])
+                .help("Before benchmarking, report system conditions that add noise (CPU \
+                       governor, turbo boost, load, battery, thermal throttling), with a hint \
+                       for each problem. '--check-system=strict' aborts with exit code 4 if \
+                       any check does not pass (useful on CI benchmark runners).")
+                .long_help("Before benchmarking, report system conditions that make results \
+                       noisy or irreproducible, with a hint for each problem:\n\
+                       Linux: CPU frequency governor, turbo boost, load average, power source, \
+                       temperature.\n\
+                       macOS: load average, power source, Low Power Mode, thermal throttling.\n\n\
+                       '--check-system' (or '=warn') only reports. '--check-system=strict' \
+                       aborts with exit code 4 if any check does not pass, which is useful on \
+                       dedicated benchmark machines and CI runners.\n\n\
+                       Example:  joulex --check-system=strict 'make'"),
+        )
+        .arg(
             Arg::new("priority")
                 .long("priority")
                 .action(ArgAction::Set)

@@ -21,8 +21,9 @@ fn stable_benchmarks_have_no_diagnostic_warnings() {
 mod unix {
     use super::*;
 
-    /// Sleeps 10 ms + 1 ms per run: a clear upward trend
-    const RAMP: &str = "sleep $(printf '0.%03d' $((10 + JOULEX_ITERATION)))";
+    /// Sleeps 20 ms + 3 ms per run: a clear upward trend. Run with '-N' (an
+    /// explicit 'sh -c') so that no noisy shell spawning time is subtracted.
+    const RAMP: &str = "sh -c 'sleep $(printf 0.%03d $((20 + 3 * JOULEX_ITERATION)))'";
     /// Alternates between 50 ms and 150 ms: two separated groups. Run with
     /// '-N' (an explicit 'sh -c'), so that no shell spawning time is
     /// subtracted: under CPU load, that subtraction is the main noise source.
@@ -40,7 +41,7 @@ mod unix {
         let dir = tempfile::tempdir().unwrap();
         let json = dir.path().join("out.json");
         hyperfine()
-            .args(["--runs=30", "--export-json"])
+            .args(["--runs=30", "-N", "--export-json"])
             .arg(&json)
             .arg(RAMP)
             .assert()
@@ -82,7 +83,7 @@ mod unix {
     #[test]
     fn diagnostic_warnings_can_be_suppressed() {
         hyperfine()
-            .args(["--runs=30", "--suppress-outlier-warnings", RAMP])
+            .args(["--runs=30", "-N", "--suppress-outlier-warnings", RAMP])
             .assert()
             .success()
             .stderr(predicate::str::contains("trend").not());
