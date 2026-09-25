@@ -46,9 +46,13 @@ pub trait MarkupExporter {
             // prepare data row strings
             // Each exporter escapes the command for its own markup in `command()`.
             let cmd_str = measurement.command_with_unused_parameters.as_str();
-            let mean_str = format_duration_value(measurement.mean, Some(unit)).0;
-            let stddev_str = if let Some(stddev) = measurement.stddev {
-                format!(" ± {}", format_duration_value(stddev, Some(unit)).0)
+            let (mean_str, stddev_value) = crate::output::format::format_mean_stddev_values(
+                measurement.mean,
+                measurement.stddev,
+                unit,
+            );
+            let stddev_str = if let Some(stddev) = stddev_value {
+                format!(" ± {stddev}")
             } else {
                 "".into()
             };

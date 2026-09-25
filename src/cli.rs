@@ -480,6 +480,26 @@ pub fn build_command() -> Command {
             ),
         )
         .arg(
+            Arg::new("precision")
+                .long("precision")
+                .action(ArgAction::Set)
+                .value_name("N|auto")
+                .value_parser(|value: &str| -> Result<String, String> {
+                    match value {
+                        "auto" => Ok(value.to_string()),
+                        _ => match value.parse::<usize>() {
+                            Ok(n) if n <= 9 => Ok(value.to_string()),
+                            _ => Err("expected a number of decimals (0-9) or 'auto'".into()),
+                        },
+                    }
+                })
+                .help("Number of decimals of times in human-readable output (terminal, \
+                       Markdown, AsciiDoc, Org, HTML). 'auto' rounds mean and σ to two \
+                       significant digits of σ, e.g. '120.2 s ± 1.5 s' instead of \
+                       '120.164 s ± 1.488 s'. CSV and JSON always keep full precision. \
+                       Default: 3 decimals for seconds, 1 for milliseconds and microseconds."),
+        )
+        .arg(
             Arg::new("time-unit")
                 .long("time-unit")
                 .short('u')

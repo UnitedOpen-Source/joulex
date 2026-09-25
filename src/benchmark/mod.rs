@@ -631,7 +631,15 @@ impl<'a> BenchmarkRunner<'a> {
             }
 
             if let Some(stddev) = t_stddev {
-                let stddev_str = format_duration(stddev, Some(time_unit));
+                // Mean and σ with consistent decimals ('--precision auto')
+                let (mean_value, stddev_value) = crate::output::format::format_mean_stddev_values(
+                    t_mean,
+                    Some(stddev),
+                    time_unit,
+                );
+                let unit_name = time_unit.short_name();
+                let mean_str = format!("{mean_value} {unit_name}");
+                let stddev_str = format!("{} {unit_name}", stddev_value.unwrap_or_default());
 
                 crate::outln!(
                     "  Time ({} ± {}):     {:>8} ± {:>8}    [User: {}, System: {}{}{}]",

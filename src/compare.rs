@@ -109,13 +109,12 @@ pub fn parse_threshold(value: &str) -> Result<f64, String> {
 }
 
 fn format_time(result: &BenchmarkResult, unit: Option<Unit>) -> String {
-    let (mean, unit) = format_duration_unit(result.mean, unit);
-    match result.stddev {
-        Some(stddev) => format!(
-            "{mean} ± {}",
-            crate::output::format::format_duration_value(stddev, Some(unit)).0
-        ),
-        None => mean,
+    let (_, unit) = format_duration_unit(result.mean, unit);
+    let (mean, stddev) =
+        crate::output::format::format_mean_stddev_values(result.mean, result.stddev, unit);
+    match stddev {
+        Some(stddev) => format!("{mean} {} ± {stddev}", unit.short_name()),
+        None => format!("{mean} {}", unit.short_name()),
     }
 }
 
