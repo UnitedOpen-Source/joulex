@@ -315,7 +315,10 @@ pub fn build_command() -> Command {
                        the default shell on this platform. Finally, this can also be set to \
                        \"none\" to disable the shell. In this case, commands will be executed \
                        directly. They can still have arguments, but more complex things like \
-                       \"sleep 0.1; sleep 0.2\" are not possible without a shell.")
+                       \"sleep 0.1; sleep 0.2\" are not possible without a shell. \
+                       Arguments are split with POSIX quoting rules, except on Windows, where \
+                       the C runtime rules apply (double quotes only; backslashes in paths \
+                       like C:\\tools\\app.exe are kept).")
         )
         .arg(
             Arg::new("no-shell")
