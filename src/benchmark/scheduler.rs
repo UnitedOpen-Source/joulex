@@ -45,7 +45,7 @@ impl<'a> Scheduler<'a> {
         self.imported_count += imported.len();
         for res in imported {
             if self.options.output_style != OutputStyleOption::Disabled {
-                println!(
+                crate::outln!(
                     "{}{}: {} (imported)",
                     "Benchmark ".bold(),
                     (self.results.len() + 1).to_string().bold(),
@@ -292,7 +292,7 @@ impl<'a> Scheduler<'a> {
             for runner in runners {
                 if runner.times_real.is_empty() {
                     if self.options.output_style != OutputStyleOption::Disabled {
-                        println!(
+                        crate::outln!(
                             "{}{}: {} (interrupted before completing any runs)",
                             "Benchmark ".bold(),
                             (runner.display_number + 1).to_string().bold(),
@@ -421,7 +421,7 @@ impl<'a> Scheduler<'a> {
         ) {
             match self.options.sort_order_speed_comparison {
                 SortOrder::MeanTime => {
-                    println!("{}", summary_title.bold());
+                    crate::outln!("{}", summary_title.bold());
 
                     // `compute_with_check_from_reference` marks exactly one entry
                     let Some(reference) = annotated_results.iter().find(|r| r.is_reference) else {
@@ -429,7 +429,7 @@ impl<'a> Scheduler<'a> {
                     };
                     let others = annotated_results.iter().filter(|r| !r.is_reference);
 
-                    println!(
+                    crate::outln!(
                         "  {} ran",
                         colors::cyan(&reference.result.command_with_unused_parameters)
                     );
@@ -466,7 +466,7 @@ impl<'a> Scheduler<'a> {
                                 stddev
                             ),
                         };
-                        println!(
+                        crate::outln!(
                             "{} {} {}",
                             comparator,
                             colors::magenta(&item.result.command_with_unused_parameters),
@@ -487,13 +487,15 @@ impl<'a> Scheduler<'a> {
                                             "no statistically significant difference (p ≥ 0.05)"
                                                 .dimmed()
                                         };
-                                        println!(
+                                        crate::outln!(
                                             "      [Bootstrap t-test: t = {:.2}, p = {:.4} -> {}]",
-                                            cmp.t_statistic, cmp.p_value, sig_str
+                                            cmp.t_statistic,
+                                            cmp.p_value,
+                                            sig_str
                                         );
                                     }
                                     None => {
-                                        println!(
+                                        crate::outln!(
                                             "      {}",
                                             "[Bootstrap t-test: not applicable (zero variance or insufficient samples)]"
                                                 .dimmed()
@@ -531,14 +533,14 @@ impl<'a> Scheduler<'a> {
                     };
 
                     if let Some(ref_cmd) = reference_command {
-                        println!(
+                        crate::outln!(
                             "{} (reference: {}){}",
                             "Relative speed comparison".bold(),
                             colors::cyan(ref_cmd),
                             interrupted_suffix
                         );
                     } else {
-                        println!(
+                        crate::outln!(
                             "{}{}",
                             "Relative speed comparison".bold(),
                             interrupted_suffix
@@ -576,7 +578,7 @@ impl<'a> Scheduler<'a> {
                             String::new()
                         };
 
-                        println!(
+                        crate::outln!(
                             "  {}{}  {:<width$}{}",
                             colors::green(format!("{:10.2}", item.relative_speed)).bold(),
                             stddev_suffix,
