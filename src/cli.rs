@@ -425,6 +425,7 @@ pub fn build_command() -> Command {
                      .md       Markdown table.\n\
                      .adoc     AsciiDoc table.\n\
                      .org      Org-mode table.\n\
+                     .html     Self-contained HTML report with plots.\n\
                      \n\
                      Notes:\n\
                      - Repeat --export to generate multiple formats.\n\
@@ -486,6 +487,17 @@ pub fn build_command() -> Command {
                 .value_name("FILE")
                 .value_hint(ValueHint::FilePath)
                 .help("Like --export-markdown-runs, but as AsciiDoc tables."),
+        )
+        .arg(
+            Arg::new("export-html")
+                .long("export-html")
+                .action(ArgAction::Set)
+                .value_name("FILE")
+                .value_hint(ValueHint::FilePath)
+                .help("Export a self-contained HTML report to the given FILE: summary table, \
+                       histogram with kernel density estimate and run-order plot per command, \
+                       and a box plot comparing all commands. No JavaScript, no external \
+                       assets; light and dark themes. Also chosen by '--export FILE.html'."),
         )
         .arg(
             Arg::new("export-json")

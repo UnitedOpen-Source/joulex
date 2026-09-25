@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 mod asciidoc;
 mod csv;
+mod html;
 mod json;
 mod markdown;
 mod markup;
@@ -16,6 +17,7 @@ mod tests;
 
 use self::asciidoc::AsciidocExporter;
 use self::csv::CsvExporter;
+use self::html::HtmlExporter;
 use self::json::JsonExporter;
 use self::markdown::MarkdownExporter;
 use self::metadata::{parse_labels, ExportMetadata};
@@ -55,6 +57,9 @@ pub enum ExportType {
 
     /// One AsciiDoc table per benchmark with every run
     AsciidocRuns,
+
+    /// Self-contained HTML report with plots
+    Html,
 }
 
 /// Interface for different exporters.
@@ -131,6 +136,7 @@ impl ExportManager {
             add_exporter("export-markdown-runs", ExportType::MarkdownRuns)?;
             add_exporter("export-orgmode-runs", ExportType::OrgmodeRuns)?;
             add_exporter("export-asciidoc-runs", ExportType::AsciidocRuns)?;
+            add_exporter("export-html", ExportType::Html)?;
         }
         Ok(export_manager)
     }
@@ -150,6 +156,7 @@ impl ExportManager {
             ExportType::MarkdownRuns => Box::<RunsExporter<MarkdownExporter>>::default(),
             ExportType::OrgmodeRuns => Box::<RunsExporter<OrgmodeExporter>>::default(),
             ExportType::AsciidocRuns => Box::<RunsExporter<AsciidocExporter>>::default(),
+            ExportType::Html => Box::<HtmlExporter>::default(),
         };
 
         self.exporters.push(ExporterWithTarget {
@@ -290,6 +297,7 @@ fn get_export_type_from_filename(filename: &str) -> ExportType {
         Some("csv") => ExportType::Csv,
         Some("md" | "markdown") => ExportType::Markdown,
         Some("org") => ExportType::Orgmode,
+        Some("html" | "htm") => ExportType::Html,
         _ => ExportType::Json,
     }
 }
