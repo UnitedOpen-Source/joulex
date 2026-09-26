@@ -262,8 +262,48 @@ pub fn execute_and_measure(
         command.creation_flags(CREATE_SUSPENDED);
     }
 
+    #[cfg(target_os = "linux")]
+    let (pipe_read, pipe_write) = {
+        use std::os::fd::FromRawFd;
+        let mut fds = [0i32; 2];
+        // SAFETY: fds points to a valid 2-element i32 array.
+        let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
+        if ret == 0 {
+            use std::os::fd::AsRawFd;
+            use std::os::unix::process::CommandExt;
+            // SAFETY: fds were created by pipe2 above.
+            let read_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fds[0]) };
+            let write_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fds[1]) };
+            let raw_write = write_fd.as_raw_fd();
+            unsafe {
+                command.pre_exec(move || {
+                    let _ = raw_write;
+                    Ok(())
+                });
+            }
+            (Some(read_fd), Some(write_fd))
+        } else {
+            (None, None)
+        }
+    };
+
+    #[cfg(not(target_os = "linux"))]
     let wallclock_timer = WallClockTimer::start();
+
     let mut child = command.spawn()?;
+
+    #[cfg(target_os = "linux")]
+    let wallclock_timer = {
+        if let (Some(read_fd), Some(write_fd)) = (pipe_read, pipe_write) {
+            use std::os::fd::AsRawFd;
+            drop(write_fd);
+            let mut b = [0u8; 1];
+            // SAFETY: read_fd is a valid file descriptor; b points to a valid 1-byte buffer.
+            let _ = unsafe { libc::read(read_fd.as_raw_fd(), b.as_mut_ptr().cast(), 1) };
+            drop(read_fd);
+        }
+        WallClockTimer::start()
+    };
 
     #[cfg(windows)]
     if let Some(cpus) = affinity {
