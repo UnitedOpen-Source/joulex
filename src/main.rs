@@ -24,6 +24,7 @@ pub mod energy;
 pub mod error;
 pub mod export;
 pub mod import;
+pub mod metric;
 pub mod options;
 pub mod outlier_detection;
 pub mod output;
@@ -78,6 +79,7 @@ fn run() -> Result<()> {
         &cli_arguments,
         options.time_unit,
         options.sort_order_exports,
+        options.metric,
     )?;
 
     // Load the baseline before benchmarking, so that a bad file fails fast

@@ -331,6 +331,9 @@ pub struct Options {
     /// Which time unit to use when displaying results
     pub time_unit: Option<Unit>,
 
+    /// Primary metric used for statistics, outlier detection, comparison, and sorting
+    pub metric: crate::metric::Metric,
+
     /// Measure energy consumption in Joules and display Performance per Watt
     pub measure_energy: bool,
 
@@ -405,6 +408,7 @@ impl Default for Options {
             command_output_policies: vec![CommandOutputPolicy::Null],
             time_unit: None,
             command_input_policy: CommandInputPolicy::Null,
+            metric: crate::metric::Metric::Wall,
             measure_energy: false,
             deep_stats: false,
             filter_failed: false,
@@ -701,6 +705,14 @@ impl Options {
         };
 
         options.measure_energy = matches.get_flag("energy");
+        if let Some(metric_str) = matches.get_one::<String>("metric") {
+            options.metric = metric_str
+                .parse::<crate::metric::Metric>()
+                .unwrap_or_default();
+        }
+        if options.metric == crate::metric::Metric::Energy {
+            options.measure_energy = true;
+        }
         options.deep_stats = matches.get_flag("deep-stats");
         options.filter_failed = matches.get_flag("filter-failed");
         options.suppress_outlier_warnings = matches.get_flag("suppress-outlier-warnings");
@@ -857,6 +869,15 @@ impl Options {
                 self.command_output_policies.len() == num_commands,
                 "The '--output' option has to be provided just once or N times, where N={num_commands} is the \
                  number of benchmark commands (including a potential reference)."
+            );
+        }
+
+        if self.metric == crate::metric::Metric::Energy
+            && !matches!(self.executor_kind, ExecutorKind::Mock(_))
+            && !crate::energy::get_energy_sampler().is_available()
+        {
+            bail!(
+                "Energy measurement is unavailable or unprivileged on this platform. Cannot use '--metric energy'."
             );
         }
 

@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::benchmark_result::BenchmarkResult;
-use crate::{options::SortOrder, util::units::Scalar};
+use crate::{metric::Metric, options::SortOrder, util::units::Scalar};
 
 #[derive(Debug)]
 pub struct BenchmarkResultWithRelativeSpeed<'a> {
@@ -9,42 +9,57 @@ pub struct BenchmarkResultWithRelativeSpeed<'a> {
     pub relative_speed: Scalar,
     pub relative_speed_stddev: Option<Scalar>,
     pub is_reference: bool,
-    // Less means faster
+    // Less means better (faster, less energy, less memory)
     pub relative_ordering: Ordering,
 }
 
-pub fn compare_mean_time(l: &BenchmarkResult, r: &BenchmarkResult) -> Ordering {
+pub fn compare_metric(l: &BenchmarkResult, r: &BenchmarkResult, metric: Metric) -> Ordering {
     match (l.timed_out, r.timed_out) {
         (true, false) => Ordering::Greater,
         (false, true) => Ordering::Less,
-        _ => l.mean.partial_cmp(&r.mean).unwrap_or(Ordering::Equal),
+        _ => {
+            let l_val = l.primary_mean(metric);
+            let r_val = r.primary_mean(metric);
+            l_val.partial_cmp(&r_val).unwrap_or(Ordering::Equal)
+        }
     }
 }
 
-/// The result with the smallest mean, excluding timed-out benchmarks if possible.
+pub fn compare_mean_time(l: &BenchmarkResult, r: &BenchmarkResult) -> Ordering {
+    compare_metric(l, r, Metric::Wall)
+}
+
+/// The result with the smallest primary metric value, excluding timed-out benchmarks if possible.
 ///
 /// # Panics
-/// If `results` is empty. Every caller checks this first (an empty result set
-/// has no relative speeds).
-pub fn fastest_of(results: &[BenchmarkResult]) -> &BenchmarkResult {
+/// If `results` is empty. Every caller checks this first.
+pub fn best_of(results: &[BenchmarkResult], metric: Metric) -> &BenchmarkResult {
     results
         .iter()
         .filter(|r| !r.timed_out)
-        .min_by(|&l, &r| compare_mean_time(l, r))
-        .or_else(|| results.iter().min_by(|&l, &r| compare_mean_time(l, r)))
+        .min_by(|&l, &r| compare_metric(l, r, metric))
+        .or_else(|| results.iter().min_by(|&l, &r| compare_metric(l, r, metric)))
         .expect("at least one benchmark result")
+}
+
+pub fn fastest_of(results: &[BenchmarkResult]) -> &BenchmarkResult {
+    best_of(results, Metric::Wall)
 }
 
 fn compute_relative_speeds<'a>(
     results: &'a [BenchmarkResult],
     reference: &'a BenchmarkResult,
     sort_order: SortOrder,
+    metric: Metric,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
+    let ref_mean = reference.primary_mean(metric);
+    let ref_stddev = reference.primary_stddev(metric);
+
     let mut results: Vec<_> = results
         .iter()
         .map(|result| {
             let is_reference = std::ptr::eq(result, reference);
-            let relative_ordering = compare_mean_time(result, reference);
+            let relative_ordering = compare_metric(result, reference, metric);
 
             if result.timed_out {
                 return BenchmarkResultWithRelativeSpeed {
@@ -56,7 +71,10 @@ fn compute_relative_speeds<'a>(
                 };
             }
 
-            if result.mean == 0.0 {
+            let res_mean = result.primary_mean(metric);
+            let res_stddev = result.primary_stddev(metric);
+
+            if res_mean == 0.0 {
                 return BenchmarkResultWithRelativeSpeed {
                     result,
                     relative_speed: if is_reference { 1.0 } else { f64::INFINITY },
@@ -67,18 +85,18 @@ fn compute_relative_speeds<'a>(
             }
 
             let ratio = match relative_ordering {
-                Ordering::Less => reference.mean / result.mean,
+                Ordering::Less => ref_mean / res_mean,
                 Ordering::Equal => 1.0,
-                Ordering::Greater => result.mean / reference.mean,
+                Ordering::Greater => res_mean / ref_mean,
             };
 
             // https://en.wikipedia.org/wiki/Propagation_of_uncertainty#Example_formulas
             // Covariance assumed to be 0, i.e. variables are assumed to be independent
-            let ratio_stddev = match (result.stddev, reference.stddev) {
+            let ratio_stddev = match (res_stddev, ref_stddev) {
                 (Some(result_stddev), Some(fastest_stddev)) => Some(
                     ratio
-                        * ((result_stddev / result.mean).powi(2)
-                            + (fastest_stddev / reference.mean).powi(2))
+                        * ((result_stddev / res_mean).powi(2)
+                            + (fastest_stddev / ref_mean).powi(2))
                         .sqrt(),
                 ),
                 _ => None,
@@ -97,7 +115,7 @@ fn compute_relative_speeds<'a>(
     match sort_order {
         SortOrder::Command => {}
         SortOrder::MeanTime => {
-            results.sort_unstable_by(|r1, r2| compare_mean_time(r1.result, r2.result));
+            results.sort_unstable_by(|r1, r2| compare_metric(r1.result, r2.result, metric));
         }
     }
 
@@ -108,33 +126,40 @@ pub fn compute_with_check_from_reference<'a>(
     results: &'a [BenchmarkResult],
     reference: &'a BenchmarkResult,
     sort_order: SortOrder,
+    metric: Metric,
 ) -> Option<Vec<BenchmarkResultWithRelativeSpeed<'a>>> {
     if results.is_empty() {
         return Some(Vec::new());
     }
 
-    if fastest_of(results).mean == 0.0 || reference.mean == 0.0 {
+    if best_of(results, metric).primary_mean(metric) == 0.0 || reference.primary_mean(metric) == 0.0
+    {
         return None;
     }
 
-    Some(compute_relative_speeds(results, reference, sort_order))
+    Some(compute_relative_speeds(
+        results, reference, sort_order, metric,
+    ))
 }
 
 pub fn compute_with_check<'a>(
     results: &'a [BenchmarkResult],
     sort_order: SortOrder,
+    metric: Metric,
 ) -> Option<Vec<BenchmarkResultWithRelativeSpeed<'a>>> {
     if results.is_empty() {
         return Some(Vec::new());
     }
 
-    let fastest = fastest_of(results);
+    let fastest = best_of(results, metric);
 
-    if fastest.mean == 0.0 {
+    if fastest.primary_mean(metric) == 0.0 {
         return None;
     }
 
-    Some(compute_relative_speeds(results, fastest, sort_order))
+    Some(compute_relative_speeds(
+        results, fastest, sort_order, metric,
+    ))
 }
 
 /// Fallback when relative speed cannot be computed (e.g. fastest is 0.0).
@@ -143,6 +168,7 @@ pub fn compute_without_ratios<'a>(
     results: &'a [BenchmarkResult],
     reference: &'a BenchmarkResult,
     sort_order: SortOrder,
+    metric: Metric,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
     if results.is_empty() {
         return Vec::new();
@@ -152,7 +178,7 @@ pub fn compute_without_ratios<'a>(
         .iter()
         .map(|result| {
             let is_reference = std::ptr::eq(result, reference);
-            let relative_ordering = compare_mean_time(result, reference);
+            let relative_ordering = compare_metric(result, reference, metric);
 
             BenchmarkResultWithRelativeSpeed {
                 result,
@@ -167,7 +193,7 @@ pub fn compute_without_ratios<'a>(
     match sort_order {
         SortOrder::Command => {}
         SortOrder::MeanTime => {
-            results.sort_unstable_by(|r1, r2| compare_mean_time(r1.result, r2.result));
+            results.sort_unstable_by(|r1, r2| compare_metric(r1.result, r2.result, metric));
         }
     }
 
@@ -178,14 +204,15 @@ pub fn compute_without_ratios<'a>(
 pub fn compute<'a>(
     results: &'a [BenchmarkResult],
     sort_order: SortOrder,
+    metric: Metric,
 ) -> Vec<BenchmarkResultWithRelativeSpeed<'a>> {
     if results.is_empty() {
         return Vec::new();
     }
 
-    let fastest = fastest_of(results);
+    let fastest = best_of(results, metric);
 
-    compute_relative_speeds(results, fastest, sort_order)
+    compute_relative_speeds(results, fastest, sort_order, metric)
 }
 
 #[cfg(test)]
@@ -239,7 +266,7 @@ fn test_compute_relative_speed() {
         create_result("cmd3", 5.0),
     ];
 
-    let annotated_results = compute_with_check(&results, SortOrder::Command).unwrap();
+    let annotated_results = compute_with_check(&results, SortOrder::Command, Metric::Wall).unwrap();
 
     assert_relative_eq!(1.5, annotated_results[0].relative_speed);
     assert_relative_eq!(1.0, annotated_results[1].relative_speed);
@@ -254,7 +281,8 @@ fn test_compute_relative_speed_with_reference() {
     let reference = create_result("cmd2", 4.0);
 
     let annotated_results =
-        compute_with_check_from_reference(&results, &reference, SortOrder::Command).unwrap();
+        compute_with_check_from_reference(&results, &reference, SortOrder::Command, Metric::Wall)
+            .unwrap();
 
     assert_relative_eq!(2.0, annotated_results[0].relative_speed);
     assert_relative_eq!(1.25, annotated_results[1].relative_speed);
@@ -264,7 +292,7 @@ fn test_compute_relative_speed_with_reference() {
 fn test_compute_relative_speed_for_zero_times() {
     let results = vec![create_result("cmd1", 1.0), create_result("cmd2", 0.0)];
 
-    let annotated_results = compute_with_check(&results, SortOrder::Command);
+    let annotated_results = compute_with_check(&results, SortOrder::Command, Metric::Wall);
 
     assert!(annotated_results.is_none());
 }
@@ -273,7 +301,8 @@ fn test_compute_relative_speed_for_zero_times() {
 fn test_compute_without_ratios() {
     let results = vec![create_result("cmd1", 0.0), create_result("cmd2", 0.0)];
 
-    let annotated_results = compute_without_ratios(&results, &results[0], SortOrder::Command);
+    let annotated_results =
+        compute_without_ratios(&results, &results[0], SortOrder::Command, Metric::Wall);
     assert_eq!(annotated_results.len(), 2);
     assert!(annotated_results[0].relative_speed.is_nan());
     assert!(annotated_results[1].relative_speed.is_nan());
@@ -287,7 +316,8 @@ fn test_compute_without_ratios() {
 fn test_compute_without_ratios_identical_results_single_reference() {
     let results = vec![create_result("cmd1", 0.0), create_result("cmd1", 0.0)];
 
-    let annotated_results = compute_without_ratios(&results, &results[1], SortOrder::Command);
+    let annotated_results =
+        compute_without_ratios(&results, &results[1], SortOrder::Command, Metric::Wall);
     assert!(!annotated_results[0].is_reference);
     assert!(annotated_results[1].is_reference);
 }
@@ -296,7 +326,7 @@ fn test_compute_without_ratios_identical_results_single_reference() {
 fn test_compute_relative_speed_identical_results_single_reference() {
     let results = vec![create_result("cmd1", 1.0), create_result("cmd1", 1.0)];
 
-    let annotated_results = compute_with_check(&results, SortOrder::Command).unwrap();
+    let annotated_results = compute_with_check(&results, SortOrder::Command, Metric::Wall).unwrap();
     assert_eq!(
         annotated_results.iter().filter(|r| r.is_reference).count(),
         1
@@ -306,8 +336,46 @@ fn test_compute_relative_speed_identical_results_single_reference() {
 #[test]
 fn test_compute_empty_results() {
     let results: Vec<BenchmarkResult> = Vec::new();
-    assert!(compute_with_check(&results, SortOrder::Command)
-        .unwrap()
-        .is_empty());
-    assert!(compute(&results, SortOrder::Command).is_empty());
+    assert!(
+        compute_with_check(&results, SortOrder::Command, Metric::Wall)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(compute(&results, SortOrder::Command, Metric::Wall).is_empty());
+}
+
+#[test]
+fn test_compute_relative_speed_energy_and_memory() {
+    use approx::assert_relative_eq;
+
+    let res1 = BenchmarkResult {
+        command: "cmd1".into(),
+        mean: 1.0,
+        mean_energy_joules: Some(10.0),
+        memory_usage_byte: Some(vec![1000]),
+        ..Default::default()
+    };
+    let res2 = BenchmarkResult {
+        command: "cmd2".into(),
+        mean: 2.0,
+        mean_energy_joules: Some(5.0),
+        memory_usage_byte: Some(vec![3000]),
+        ..Default::default()
+    };
+    let results = vec![res1, res2];
+
+    // Under Metric::Wall: cmd1 is fastest (1.0 vs 2.0)
+    let wall_speeds = compute_with_check(&results, SortOrder::Command, Metric::Wall).unwrap();
+    assert_relative_eq!(1.0, wall_speeds[0].relative_speed);
+    assert_relative_eq!(2.0, wall_speeds[1].relative_speed);
+
+    // Under Metric::Energy: cmd2 uses less energy (5.0 vs 10.0) -> cmd2 is reference/best
+    let energy_speeds = compute_with_check(&results, SortOrder::Command, Metric::Energy).unwrap();
+    assert_relative_eq!(2.0, energy_speeds[0].relative_speed);
+    assert_relative_eq!(1.0, energy_speeds[1].relative_speed);
+
+    // Under Metric::Memory: cmd1 uses less memory (1000 vs 3000) -> cmd1 is best
+    let mem_speeds = compute_with_check(&results, SortOrder::Command, Metric::Memory).unwrap();
+    assert_relative_eq!(1.0, mem_speeds[0].relative_speed);
+    assert_relative_eq!(3.0, mem_speeds[1].relative_speed);
 }
