@@ -730,10 +730,10 @@ impl<'a> Scheduler<'a> {
             eprintln!(
                 "{}: The benchmark comparison could not be computed as some benchmark times are zero. \
                  This could be caused by background interference during the initial calibration phase \
-                 of joulex, in combination with very fast commands (faster than a few milliseconds). \
+                 of perfratio, in combination with very fast commands (faster than a few milliseconds). \
                  Try to re-run the benchmark on a quiet system. If you did not do so already, try the \
                  --shell=none/-N option. If it does not help either, you command is most likely too fast \
-                 to be accurately benchmarked by joulex.",
+                 to be accurately benchmarked by perfratio.",
                  colors::red("Note").bold()
             );
         }

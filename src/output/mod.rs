@@ -4,7 +4,7 @@ pub mod progress_bar;
 pub mod warnings;
 
 /// Write to stdout, but never panic: if stdout was closed early (a broken
-/// pipe, e.g. `joulex … | head`), stop printing and let the benchmark and the
+/// pipe, e.g. `perfratio … | head`), stop printing and let the benchmark and the
 /// exports finish. `println!` would panic and lose the exports.
 pub fn write_stdout(args: std::fmt::Arguments<'_>) {
     use std::io::Write;

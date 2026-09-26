@@ -11,8 +11,11 @@ use crate::util::units::Unit;
 use anyhow::Result;
 
 #[derive(Serialize, Debug)]
-struct JoulexSummary<'a> {
-    /// Information about the joulex run (version, command line, date, labels, system)
+struct PerfratioSummary<'a> {
+    /// Information about the perfratio run (version, command line, date, labels, system)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    perfratio: Option<&'a ExportMetadata>,
+    /// Backwards compatibility alias for older consumers
     #[serde(skip_serializing_if = "Option::is_none")]
     joulex: Option<&'a ExportMetadata>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -67,7 +70,8 @@ impl Exporter for JsonExporter {
             })
             .collect();
 
-        let mut output = to_vec_pretty(&JoulexSummary {
+        let mut output = to_vec_pretty(&PerfratioSummary {
+            perfratio: self.metadata.as_ref(),
             joulex: self.metadata.as_ref(),
             interrupted: crate::util::interrupt::interrupted(),
             results,

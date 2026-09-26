@@ -1,0 +1,369 @@
+.TH PERFRATIO 1
+.SH NAME
+perfratio \- command\-line benchmarking tool with energy, hardware telemetry, and deep stats
+.SH SYNOPSIS
+.B perfratio
+.RB [ \-ihVN ]
+.RB [ \-E
+.RB |
+.IR \-\-energy ]
+.RB [ \-\-deep\-stats ]
+.RB [ \-\-schedule
+.IR MODE ]
+.RB [ \-\-import\-json
+.IR FILE ]
+.RB [ \-w
+.IR NUM
+.RB |
+.IR \-\-warmup
+.IR NUM ]
+.RB [ \-m
+.IR NUM
+.RB |
+.IR \-\-min\-runs
+.IR NUM ]
+.RB [ \-M
+.IR NUM
+.RB |
+.IR \-\-max\-runs
+.IR NUM ]
+.RB [ \-r
+.IR NUM
+.RB |
+.IR \-\-runs
+.IR NUM ]
+.RB [ \-s
+.IR CMD
+.RB |
+.IR \-\-setup
+.IR CMD ]
+.RB [ \-p
+.IR CMD
+.RB |
+.IR \-\-prepare
+.IR CMD ]
+.RB [ \-C
+.IR CMD
+.RB |
+.IR \-\-conclude
+.IR CMD ]
+.RB [ \-c
+.IR CMD
+.RB |
+.IR \-\-cleanup
+.IR CMD ]
+.RB [ \-\-reference
+.IR CMD ]
+.RB [ \-\-reference\-name
+.IR NAME ]
+.RB [ \-P
+.IR VAR
+.IR MIN
+.IR MAX ]
+.RB [ \-D
+.IR DELTA ]
+.RB [ \-L
+.IR VAR
+.IR VALUES ]
+.RB [ \-S
+.IR SHELL ]
+.RB [ \-l
+.IR TYPE
+.RB |
+.IR \-\-style
+.IR TYPE ]
+.RB [ \-t
+.IR METHOD
+.RB |
+.IR \-\-sort
+.IR METHOD ]
+.RB [ \-u
+.IR UNIT
+.RB |
+.IR \-\-time\-unit
+.IR UNIT ]
+.RB [ \-e
+.IR FILE
+.RB |
+.IR \-\-export
+.IR FILE ]
+.RB [ \-\-export\-asciidoc
+.IR FILE ]
+.RB [ \-\-export\-csv
+.IR FILE ]
+.RB [ \-\-export\-json
+.IR FILE ]
+.RB [ \-\-export\-markdown
+.IR FILE ]
+.RB [ \-\-export\-orgmode
+.IR FILE ]
+.RB [ \-d
+.RB |
+.IR \-\-show\-output ]
+.RB [ \-O
+.IR WHERE
+.RB |
+.IR \-\-output
+.IR WHERE ]
+.RB [ \-I
+.IR WHERE
+.RB |
+.IR \-\-input
+.IR WHERE ]
+.RB [ \-n
+.IR NAME
+.RB |
+.IR \-\-command\-name
+.IR NAME ]
+.RB [ \-\-filter\-failed ]
+.RB [ \-\-omit\-failed\-runs ]
+.RB [ \-\-no\-off\-cpu\-warning ]
+.RB [ \-\-suppress\-outlier\-warnings ]
+.RB [ \-\-suppress\-warnings
+.IR KIND... ]
+.RI [ COMMAND... ]
+.SH DESCRIPTION
+A command\-line benchmarking tool which includes:
+.LP
+.RS
+* Statistical analysis across multiple runs (mean, stddev, median, min, max)
+.RE
+.RS
+* Hardware performance per watt & energy measurements via Linux RAPL (-E/--energy)
+.RE
+.RS
+* Deep statistical analysis with Criterion-rs bootstrapping and hypothesis testing (--deep-stats)
+.RE
+.RS
+* Process peak memory (RSS) usage monitoring
+.RE
+.RS
+* Support for arbitrary shell commands or direct execution without shell (-N/--shell=none)
+.RE
+.RS
+* Sequential and round-robin benchmark scheduling (--schedule)
+.RE
+.RS
+* Constant feedback about the benchmark progress and current estimates
+.RE
+.RS
+* Warmup runs executed before timing runs (-w/--warmup)
+.RE
+.RS
+* Cache-clearing and setup/prepare/conclude/cleanup hooks
+.RE
+.RS
+* Modified Z-score statistical outlier detection
+.RE
+.RS
+* Export results to CSV, JSON, Markdown, AsciiDoc, and Emacs Org-mode
+.RE
+.RS
+* Multi-dimensional parameter scans (-P, -L, -F) with cartesian product expansion
+.RE
+.SH OPTIONS
+.HP
+\fB\-E\fR, \fB\-\-energy\fR
+.IP
+Measure hardware energy consumption in Joules and average active Power in Watts using Linux RAPL sysfs powercap counters.
+.HP
+\fB\-\-deep\-stats\fR
+.IP
+Compute deep bootstrap statistics via criterion-stats, including 95% confidence intervals for mean, median, and standard deviation, and two-sample significance tests (p-values) against reference benchmarks.
+.HP
+\fB\-\-schedule\fR \fIMODE\fP
+.IP
+Execution order across commands: 'grouped' (default) or 'round-robin' / 'interleaved' (interleaves runs across commands to mitigate thermal throttling and system drift).
+.HP
+\fB\-\-import\-json\fR \fIFILE\fP
+.IP
+Import timing results from a JSON file previously exported by perfratio, joulex, or hyperfine to compare against live commands or re-export into other formats.
+.HP
+\fB\-w\fR, \fB\-\-warmup\fR \fINUM\fP
+.IP
+Perform \fINUM\fP warmup runs before the actual benchmark to fill caches.
+.HP
+\fB\-\-first\-run\fR \fIMODE\fP
+.IP
+How to treat the first (cold) timing run of each command: \fIinclude\fP it in the statistics (default), report it \fIseparate\fPly on a "Cold (1st run)" line and as "first_run" in the JSON export and exclude it from the statistics, or \fIdiscard\fP it silently. With \fIseparate\fP and \fIdiscard\fP, one extra run is performed so that the requested number of runs is still measured. With \fB\-\-warmup\fR, \fIseparate\fP reports the first warmup run (wall-clock time only) and excludes no timing run.
+.HP
+\fB\-\-priority\fR \fIPOLICY\fP
+.IP
+Scheduling priority of every benchmarked command (and \fB\-\-prepare\fR/\fB\-\-conclude\fR/\fB\-\-setup\fR/\fB\-\-cleanup\fR): \fInormal\fP (default, inherited), \fIhigh\fP (nice \-20 on Linux and macOS, HIGH_PRIORITY_CLASS on Windows), \fIidle\fP (SCHED_IDLE on Linux, nice 19 on macOS, IDLE_PRIORITY_CLASS on Windows) or \fIrealtime\fP (SCHED_FIFO at the maximum priority on Linux, REALTIME_PRIORITY_CLASS on Windows; not available on macOS). \fIhigh\fP and \fIrealtime\fP need privileges: root or the CAP_SYS_NICE capability on Linux, root on macOS, administrator rights on Windows. A \fIrealtime\fP command that never blocks can starve the rest of the system.
+.HP
+\fB\-m\fR, \fB\-\-min\-runs\fR \fINUM\fP
+.IP
+Perform at least \fINUM\fP runs for each command. Default: 10.
+.HP
+\fB\-M\fR, \fB\-\-max\-runs\fR \fINUM\fP
+.IP
+Perform at most \fINUM\fP runs for each command.
+.HP
+\fB\-r\fR, \fB\-\-runs\fR \fINUM\fP
+.IP
+Perform exactly \fINUM\fP runs for each command.
+.HP
+\fB\-s\fR, \fB\-\-setup\fR \fICMD...\fP
+.IP
+Execute \fICMD\fP once before each set of timing runs (e.g. for compiling software).
+.HP
+\fB\-p\fR, \fB\-\-prepare\fR \fICMD...\fP
+.IP
+Execute \fICMD\fP before each timing run (e.g. to clear caches).
+.HP
+\fB\-C\fR, \fB\-\-conclude\fR \fICMD...\fP
+.IP
+Execute \fICMD\fP after each timing run.
+.HP
+\fB\-c\fR, \fB\-\-cleanup\fR \fICMD...\fP
+.IP
+Execute \fICMD\fP after completion of all benchmarking runs for each command.
+.HP
+\fB\-\-reference\fR \fICMD\fP
+.IP
+The reference command for the relative comparison of results. If unset, results are compared with the fastest command as reference.
+.HP
+\fB\-\-reference\-name\fR \fINAME\fP
+.IP
+Give a meaningful name to the reference command.
+.HP
+\fB\-P\fR, \fB\-\-parameter\-scan\fR \fIVAR\fP \fIMIN\fP \fIMAX\fP
+.IP
+Perform benchmark runs for each value in the range \fIMIN..MAX\fP. Replaces '{VAR}' in commands. Multiple scans can be combined.
+.HP
+\fB\-D\fR, \fB\-\-parameter\-step\-size\fR \fIDELTA\fP
+.IP
+Traverse the parameter scan range in steps of \fIDELTA\fP.
+.HP
+\fB\-L\fR, \fB\-\-parameter\-list\fR \fIVAR\fP \fIVALUES\fP
+.IP
+Perform benchmark runs for each comma-separated value in \fIVALUES\fP.
+.HP
+\fB\-S\fR, \fB\-\-shell\fR \fISHELL\fP
+.IP
+Set the shell executable (e.g. bash, sh, or 'none' / \fB\-N\fR to execute commands directly).
+.HP
+\fB\-N\fR
+.IP
+An alias for '\-\-shell=none'.
+.HP
+\fB\-i\fR, \fB\-\-ignore\-failure\fR
+.IP
+Ignore non-zero exit codes of benchmarked programs.
+.HP
+\fB\-\-omit\-failed\-runs\fR
+.IP
+Exclude runs with non-zero exit codes from summary statistics and percentiles (requires \fB\-i\fR/\fB\-\-ignore\-failure\fR).
+.HP
+\fB\-\-no\-off\-cpu\-warning\fR
+.IP
+Suppress off-CPU time warnings (for I/O- or sleep-bound commands).
+.HP
+\fB\-\-suppress\-outlier\-warnings\fR
+.IP
+Suppress statistical outlier detection warnings.
+.HP
+\fB\-\-suppress\-warnings\fR \fIKIND,...\fP
+.IP
+Suppress specific warning types ('off-cpu', 'outliers', 'all').
+.HP
+\fB\-l\fR, \fB\-\-style\fR \fITYPE\fP
+.IP
+Set output style: auto, basic, full, nocolor, color, none.
+.HP
+\fB\-t\fR, \fB\-\-sort\fR \fIMETHOD\fP
+.IP
+Sort order: auto, command, mean\-time.
+.HP
+\fB\-u\fR, \fB\-\-time\-unit\fR \fIUNIT\fP
+.IP
+Set time unit: microsecond, millisecond, second.
+.HP
+\fB\-e\fR, \fB\-\-export\fR \fIFILE\fP
+.IP
+Export results to \fIFILE\fP, auto-detecting the format from file extension (.csv, .json, .md, .adoc, .org).
+.HP
+\fB\-\-export\-asciidoc\fR \fIFILE\fP
+.IP
+Export summary statistics as an AsciiDoc table.
+.HP
+\fB\-\-export\-csv\fR \fIFILE\fP
+.IP
+Export summary statistics as CSV.
+.HP
+\fB\-\-export\-json\fR \fIFILE\fP
+.IP
+Export complete benchmark results and individual run timings as JSON.
+.HP
+\fB\-\-export\-markdown\fR \fIFILE\fP
+.IP
+Export summary statistics as a Markdown table.
+.HP
+\fB\-\-export\-orgmode\fR \fIFILE\fP
+.IP
+Export summary statistics as an Emacs Org-mode table.
+.HP
+\fB\-d\fR, \fB\-\-show\-output\fR
+.IP
+Print the stdout and stderr of benchmarked commands.
+.HP
+\fB\-O\fR, \fB\-\-output\fR \fIWHERE\fP
+.IP
+Redirect command output: null (default), pipe, inherit, or <FILE>.
+.HP
+\fB\-I\fR, \fB\-\-input\fR \fIWHERE\fP
+.IP
+Feed input to benchmarked commands: null (default) or <FILE>.
+.HP
+\fB\-n\fR, \fB\-\-command\-name\fR \fINAME\fP
+.IP
+Assign a custom display name to a command.
+.HP
+\fB\-h\fR, \fB\-\-help\fR
+.IP
+Print help.
+.HP
+\fB\-V\fR, \fB\-\-version\fR
+.IP
+Print version.
+.SH EXAMPLES
+.LP
+Basic benchmark of two commands:
+.RS
+.nf
+\fBperfratio\fR 'sleep 0.2' 'sleep 0.3'
+.fi
+.RE
+.LP
+Measure energy in Joules with warmups:
+.RS
+.nf
+\fBperfratio\fR \fB\-E\fR \fB\-\-warmup\fR 3 'cargo build'
+.fi
+.RE
+.LP
+Bootstrap confidence intervals and statistical significance:
+.RS
+.nf
+\fBperfratio\fR \fB\-\-deep\-stats\fR \fB\-\-reference\fR 'python script.py' 'pypy script.py'
+.fi
+.RE
+.SH EXIT STATUS
+.LP
+.TP
+.B 0
+Success.
+.TP
+.B 1
+General error (invalid options, command failure when not ignored, etc.).
+.TP
+.B 130
+Interrupted by SIGINT / Ctrl-C (partial results and exports preserved).
+.SH AUTHORS
+.LP
+Matheus Breguêz <matbrgz@gmail.com>
+.br
+David Peter <mail@david-peter.de>
+.LP
+Project repository:
+.I https://github.com/UnitedOpen-Source/joulex

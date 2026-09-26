@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{bail, Result};
 use serde::Serialize;
 
-/// Information about the joulex invocation that produced an export.
+/// Information about the perfratio invocation that produced an export.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ExportMetadata {
     pub version: &'static str,
@@ -263,8 +263,8 @@ mod tests {
     #[test]
     fn command_line_strips_the_program_path() {
         let args =
-            ["/home/alice/.cargo/bin/joulex", "-N", "sleep 0.1"].map(std::ffi::OsString::from);
-        assert_eq!(command_line(args), vec!["joulex", "-N", "sleep 0.1"]);
+            ["/home/alice/.cargo/bin/perfratio", "-N", "sleep 0.1"].map(std::ffi::OsString::from);
+        assert_eq!(command_line(args), vec!["perfratio", "-N", "sleep 0.1"]);
     }
 
     #[test]

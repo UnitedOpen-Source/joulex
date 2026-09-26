@@ -1,11 +1,11 @@
 # Benchmark regression gate in CI
 
-joulex can compare a run with a baseline exported earlier and fail when a
+perfratio can compare a run with a baseline exported earlier and fail when a
 benchmark got **significantly** slower:
 
 ```sh
-joulex --export-json baseline.json 'target/release/app input.txt'        # on main
-joulex --compare baseline.json --fail-if-regressed 5% \
+perfratio --export-json baseline.json 'target/release/app input.txt'        # on main
+perfratio --compare baseline.json --fail-if-regressed 5% \
        --export-diff-markdown diff.md 'target/release/app input.txt'     # on the PR
 ```
 
@@ -20,10 +20,10 @@ Comparison with baseline.json
 - A benchmark regresses if it is slower than the baseline by more than the
   threshold **and** the difference is statistically significant (bootstrap Welch
   test on the per-run times, p < 0.05). Noise alone does not fail the gate. Both
-  exports need per-run times (every joulex JSON export has them), and at least 3
+  exports need per-run times (every perfratio JSON export has them), and at least 3
   runs each.
 - Exit codes: `0` ok, `3` regression. Any other non-zero code is an ordinary error.
-- The exports and the comparison table are written before joulex exits with 3.
+- The exports and the comparison table are written before perfratio exits with 3.
 
 ## GitHub Actions
 
@@ -44,11 +44,11 @@ jobs:
       - run: |
           git worktree add ../base "origin/${{ github.base_ref }}"
           (cd ../base && cargo build --release)
-          joulex --warmup 3 --export-json baseline.json -n app '../base/target/release/app input.txt'
+          perfratio --warmup 3 --export-json baseline.json -n app '../base/target/release/app input.txt'
 
       - run: cargo build --release
       - run: |
-          joulex --warmup 3 --compare baseline.json --fail-if-regressed 5% \
+          perfratio --warmup 3 --compare baseline.json --fail-if-regressed 5% \
                  --export-diff-markdown diff.md -n app 'target/release/app input.txt'
 
       - if: always()

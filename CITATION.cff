@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: joulex
+title: perfratio
 message: >-
   If you use this software in scientific
   publications, please consider citing it using the
@@ -14,7 +14,7 @@ authors:
     email: mail@david-peter.de
     orcid: 'https://orcid.org/0000-0001-7950-9915'
 repository-code: 'https://github.com/UnitedOpen-Source/joulex'
-abstract: A multi-dimensional command-line benchmarking tool with energy and deep stats.
+abstract: A multi-dimensional command-line benchmarking tool with energy, hardware telemetry, and deep statistical ratios.
 license: 'MIT OR Apache-2.0'
 version: 0.1.0
 date-released: '2026-09-24'

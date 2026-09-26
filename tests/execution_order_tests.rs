@@ -659,6 +659,33 @@ fn reference_round_robin_execution() {
 }
 
 #[test]
+fn prepare_and_conclude_see_the_current_perfratio_iteration() {
+    #[cfg(unix)]
+    let var = "${PERFRATIO_ITERATION}";
+    #[cfg(windows)]
+    let var = "%PERFRATIO_ITERATION%";
+
+    ExecutionOrderTest::new()
+        .arg("--warmup=1")
+        .arg("--runs=2")
+        .prepare(&format!("prep={var}"))
+        .command(&format!("main={var}"))
+        .conclude(&format!("conc={var}"))
+        // warmup
+        .expect_output("prep=warmup-0")
+        .expect_output("main=warmup-0")
+        .expect_output("conc=warmup-0")
+        // benchmark
+        .expect_output("prep=0")
+        .expect_output("main=0")
+        .expect_output("conc=0")
+        .expect_output("prep=1")
+        .expect_output("main=1")
+        .expect_output("conc=1")
+        .run();
+}
+
+#[test]
 fn prepare_and_conclude_see_the_current_joulex_and_hyperfine_iteration() {
     #[cfg(unix)]
     let var = "${JOULEX_ITERATION}";

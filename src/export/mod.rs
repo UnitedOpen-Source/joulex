@@ -271,7 +271,7 @@ fn write_to_file(filename: &str, content: &[u8]) -> Result<()> {
         .with_context(|| format!("Invalid export file name '{filename}'"))?;
     let mut tmp_name = OsStr::new(".").to_os_string();
     tmp_name.push(file_name);
-    tmp_name.push(format!(".joulex-tmp-{}", std::process::id()));
+    tmp_name.push(format!(".perfratio-tmp-{}", std::process::id()));
     let tmp_path = parent_dir(path).join(tmp_name);
 
     let write_tmp = || -> std::io::Result<()> {

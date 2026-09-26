@@ -88,10 +88,10 @@ fn validate(res: &BenchmarkResult) -> Result<()> {
         }
     }
 
-    // Per-run arrays that joulex always records once per run must line up
+    // Per-run arrays that perfratio always records once per run must line up
     // with `times`. (Energy is excluded: samples can be missing.)
     if let Some(times) = res.times.as_deref().filter(|t| !t.is_empty()) {
-        // `min`/`max` are computed from `times` by joulex and hyperfine alike.
+        // `min`/`max` are computed from `times` by perfratio and hyperfine alike.
         let close = |a: f64, b: f64| (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
         let t_min = times.iter().copied().fold(f64::INFINITY, f64::min);
         let t_max = times.iter().copied().fold(f64::NEG_INFINITY, f64::max);

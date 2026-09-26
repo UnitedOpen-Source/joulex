@@ -21,7 +21,7 @@ pub const INITIAL_MEASUREMENT_TEMPLATE: &str = " {spinner} {msg} {elapsed_precis
 /// Format a progress bar template containing the given message template.
 pub fn create_progress_template(msg_template: &str) -> String {
     format!(
-        " {{spinner}} {} {{wide_bar}} {{pos}}/{{len}} ETA {{joulex_eta}} ",
+        " {{spinner}} {} {{wide_bar}} {{pos}}/{{len}} ETA {{perfratio_eta}} ",
         msg_template
     )
 }
@@ -112,7 +112,7 @@ pub fn format_progress_estimate(
 /// spent on the current step, gives an estimate that decreases steadily while
 /// a step is running instead of growing. None while no step has finished yet.
 ///
-/// joulex computes this itself instead of using indicatif's `{eta}`: since
+/// perfratio computes this itself instead of using indicatif's `{eta}`: since
 /// indicatif 0.17.5 its estimate grows instead of shrinking when every step
 /// takes long, e.g. one benchmark run of several seconds (hyperfine#670).
 fn eta(elapsed: Duration, done: u64, done_at: Duration, total: u64) -> Option<Duration> {
@@ -151,9 +151,20 @@ pub fn get_progress_bar(length: u64, msg: &str, option: OutputStyleOption) -> Pr
             .tick_chars(TICK_SETTINGS.0)
             .template(&template)
             .expect("no template error")
-            .with_key("joulex_eta", {
+            .with_key("perfratio_eta", {
                 // (position, elapsed time when that position was reached), shared by
                 // all clones of this formatter (indicatif requires it to be Clone)
+                let last_step = Arc::new(Mutex::new((0u64, Duration::ZERO)));
+                move |state: &ProgressState, w: &mut dyn Write| {
+                    let mut last = last_step.lock().unwrap_or_else(|e| e.into_inner());
+                    if state.pos() != last.0 {
+                        *last = (state.pos(), state.elapsed());
+                    }
+                    let estimate = eta(state.elapsed(), last.0, last.1, state.len().unwrap_or(0));
+                    let _ = w.write_str(&format_eta(estimate));
+                }
+            })
+            .with_key("joulex_eta", {
                 let last_step = Arc::new(Mutex::new((0u64, Duration::ZERO)));
                 move |state: &ProgressState, w: &mut dyn Write| {
                     let mut last = last_step.lock().unwrap_or_else(|e| e.into_inner());
@@ -222,7 +233,7 @@ mod tests {
         let t = create_progress_template("{msg:<32}");
         assert_eq!(
             t,
-            " {spinner} {msg:<32} {wide_bar} {pos}/{len} ETA {joulex_eta} "
+            " {spinner} {msg:<32} {wide_bar} {pos}/{len} ETA {perfratio_eta} "
         );
     }
 

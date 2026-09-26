@@ -18,7 +18,7 @@ const NRESAMPLES: usize = 5000;
 /// Confidence level of the intervals
 const CONFIDENCE_LEVEL: f64 = 0.95;
 /// Seed of the resampling RNG (fixed, for reproducible output)
-const SEED: u64 = 0x6a6f_756c_6578; // "joulex"
+const SEED: u64 = 0x7065_7266_7261_7469; // "perfrati"
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DeepStats {

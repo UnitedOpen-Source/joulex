@@ -4,12 +4,12 @@ authors = [
     "David Peter <mail@david-peter.de>",
 ]
 categories = ["command-line-utilities"]
-description = "Multi-dimensional command-line benchmarking tool with energy and deep stats"
-homepage = "https://github.com/UnitedOpen-Source/joulex"
+description = "Multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics"
+homepage = "https://github.com/UnitedOpen-Source/perfratio"
 license = "MIT OR Apache-2.0"
-name = "joulex"
+name = "perfratio"
 readme = "README.md"
-repository = "https://github.com/UnitedOpen-Source/joulex"
+repository = "https://github.com/UnitedOpen-Source/perfratio"
 version = "0.1.0"
 edition = "2021"
 build = "build.rs"
@@ -20,6 +20,7 @@ include = [
     "/src/**/*",
     "/build.rs",
     "/tests/**/*",
+    "/doc/perfratio.1",
     "/doc/joulex.1",
     "/README.md",
     "/CHANGELOG.md",
@@ -27,9 +28,9 @@ include = [
     "/LICENSE-APACHE",
 ]
 
-# Prebuilt binaries for `cargo binstall joulex`, matching the release archives
-# built by .github/workflows/CICD.yml: joulex-v<version>-<target>.tar.gz (.zip on
-# Windows) containing joulex-v<version>-<target>/joulex(.exe).
+# Prebuilt binaries for `cargo binstall perfratio`, matching the release archives
+# built by .github/workflows/CICD.yml: perfratio-v<version>-<target>.tar.gz (.zip on
+# Windows) containing perfratio-v<version>-<target>/perfratio(.exe).
 # The extension is spelled out because binstall's { archive-suffix } is ".tgz".
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }.tar.gz"
