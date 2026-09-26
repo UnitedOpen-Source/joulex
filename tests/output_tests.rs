@@ -73,3 +73,51 @@ fn summary_differences_are_negative_for_commands_faster_than_the_reference() {
             "2.00 ± 0.00 times slower than sleep 1 (1.000 s, −1.000 s)",
         ));
 }
+
+#[test]
+fn style_none_suppresses_progress_and_terminal_output() {
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--runs=2")
+        .arg("--style=none")
+        .arg("sleep 0.1")
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::contains("ETA").not());
+}
+
+#[test]
+fn style_basic_and_color_suppress_interactive_progress_bar() {
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--runs=2")
+        .arg("--style=basic")
+        .arg("sleep 0.1")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("ETA").not())
+        .stdout(predicate::str::contains("Benchmark 1: sleep 0.1"));
+
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--runs=2")
+        .arg("--style=color")
+        .arg("sleep 0.1")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("ETA").not())
+        .stdout(predicate::str::contains("sleep 0.1"));
+}
+
+#[test]
+fn style_full_executes_benchmarks_cleanly() {
+    hyperfine()
+        .arg("--debug-mode")
+        .arg("--runs=2")
+        .arg("--style=full")
+        .arg("sleep 0.1")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("sleep 0.1"));
+}
