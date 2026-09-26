@@ -9,7 +9,9 @@ use crate::export::ExportManager;
 use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
 use crate::output::colors;
 use crate::output::format::{format_duration, format_duration_unit};
-use crate::output::progress_bar::get_progress_bar;
+use crate::output::progress_bar::{
+    format_progress_estimate, get_progress_bar, replace_message_template,
+};
 
 use anyhow::Result;
 
@@ -228,11 +230,12 @@ impl<'a> Scheduler<'a> {
 
             // 3. Initial measurement phase
             let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
-                Some(get_progress_bar(
+                let bar = get_progress_bar(
                     runners.len() as u64,
                     "Initial round-robin measurements",
                     self.options.output_style,
-                ))
+                );
+                Some(replace_message_template(bar, "{msg} {elapsed_precise}"))
             } else {
                 None
             };
@@ -305,6 +308,7 @@ impl<'a> Scheduler<'a> {
             let adaptive = self.options.target_precision.is_some();
             let started = std::time::Instant::now();
             let budget = self.options.max_benchmarking_time * runners.len() as f64;
+            let multiple_runners = runners.len() > 1;
             let mut i = 1;
             'timing: loop {
                 if adaptive {
@@ -324,6 +328,23 @@ impl<'a> Scheduler<'a> {
                         !runner.timed_out && i < runner.count
                     };
                     if run {
+                        let msg = format_progress_estimate(
+                            &runner.times_real,
+                            self.options.time_unit,
+                            if self.options.measure_energy {
+                                Some(&runner.energy_measurements)
+                            } else {
+                                None
+                            },
+                        );
+                        if let Some(bar) = progress_bar.as_ref() {
+                            if multiple_runners {
+                                bar.set_message(format!("{}: {}", runner.command.get_name(), msg));
+                            } else {
+                                bar.set_message(msg);
+                            }
+                        }
+
                         match runner.run_timed_iteration(i) {
                             Ok(()) => {
                                 if let Some(bar) = progress_bar.as_ref() {

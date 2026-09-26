@@ -16,7 +16,10 @@ use crate::outlier_detection::{
     modified_zscores, outlier_indices, MAX_DISCARD_FRACTION, OUTLIER_THRESHOLD,
 };
 use crate::output::format::{format_duration, format_duration_unit};
-use crate::output::progress_bar::get_progress_bar;
+use crate::output::progress_bar::{
+    format_progress_estimate, get_progress_bar, reset_progress_template,
+    set_initial_measurement_template,
+};
 use crate::output::warnings::{OutlierWarningOptions, Warnings};
 use crate::stats::deep::compute_deep_stats;
 use crate::stats::diagnostics::Diagnostics;
@@ -1547,11 +1550,12 @@ impl<'a> Benchmark<'a> {
 
         // Set up progress bar (and spinner for initial measurement)
         let progress_bar = if self.options.output_style != OutputStyleOption::Disabled {
-            Some(get_progress_bar(
+            let temp_bar = get_progress_bar(
                 self.options.run_bounds.min,
                 "Initial time measurement",
                 self.options.output_style,
-            ))
+            );
+            Some(set_initial_measurement_template(temp_bar))
         } else {
             None
         };
@@ -1599,11 +1603,20 @@ impl<'a> Benchmark<'a> {
         let count_remaining = count.saturating_sub(1);
 
         // Re-configure the progress bar
+        let progress_bar = progress_bar.map(reset_progress_template);
         if let Some(bar) = progress_bar.as_ref() {
-            bar.set_length(count)
-        }
-        if let Some(bar) = progress_bar.as_ref() {
-            bar.inc(1)
+            bar.set_length(count);
+            bar.inc(1);
+            let msg = format_progress_estimate(
+                &runner.times_real,
+                self.options.time_unit,
+                if self.options.measure_energy {
+                    Some(&runner.energy_measurements)
+                } else {
+                    None
+                },
+            );
+            bar.set_message(msg);
         }
 
         // Gather statistics (perform the actual benchmark). With
@@ -1632,17 +1645,18 @@ impl<'a> Benchmark<'a> {
                 break;
             }
 
-            let msg = {
-                let mean = if runner.times_real.is_empty() {
-                    format_duration(0.0, self.options.time_unit)
+            let msg = format_progress_estimate(
+                &runner.times_real,
+                self.options.time_unit,
+                if self.options.measure_energy {
+                    Some(&runner.energy_measurements)
                 } else {
-                    format_duration(mean(&runner.times_real), self.options.time_unit)
-                };
-                format!("Current estimate: {}", colors::green(mean.to_string()))
-            };
+                    None
+                },
+            );
 
             if let Some(bar) = progress_bar.as_ref() {
-                bar.set_message(msg.to_owned())
+                bar.set_message(msg);
             }
 
             match runner.run_timed_iteration(i + 1) {
