@@ -133,6 +133,7 @@ fn run_command_and_measure_common(
     );
 
     if let Some(value) = iteration.to_env_var_value() {
+        command.env("PERFRATIO_ITERATION", &value);
         command.env("JOULEX_ITERATION", &value);
         command.env("HYPERFINE_ITERATION", value);
     }

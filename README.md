@@ -1,10 +1,10 @@
-# joulex
+# perfratio
 [![CICD](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml/badge.svg)](https://github.com/UnitedOpen-Source/joulex/actions/workflows/CICD.yml)
-[![Version info](https://img.shields.io/crates/v/joulex.svg)](https://crates.io/crates/joulex)
+[![Version info](https://img.shields.io/crates/v/perfratio.svg)](https://crates.io/crates/perfratio)
 
-A multi-dimensional command-line benchmarking tool with **Performance per Watt (Energy)** and **Deep Statistics (Criterion-rs)**.
+A multi-dimensional command-line benchmarking tool with **Hardware Performance Counters & Energy (RAPL)** and **Deep Statistics (Criterion-rs)**.
 
-**Joulex** is a hard fork of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) and incorporates statistical rigor inspired by [`Gabriella439/bench`](https://github.com/Gabriella439/bench). It addresses the need for energy-aware and statistically robust systems benchmarking.
+**perfratio** (formerly `joulex`) builds upon the heritage of [`sharkdp/hyperfine`](https://github.com/sharkdp/hyperfine) and incorporates statistical rigor inspired by [`Gabriella439/bench`](https://github.com/Gabriella439/bench) alongside hardware telemetry concepts from `perf stat` and `poop`. It is engineered for hardware-aware performance ratios, energy efficiency, and statistically robust systems benchmarking.
 
 ## Key Features
 
@@ -12,7 +12,7 @@ A multi-dimensional command-line benchmarking tool with **Performance per Watt (
 * **🔬 Deep Statistical Rigor (`--deep-stats`)**: Direct integration with `criterion-stats` (Criterion.rs) computing 95% bootstrapped confidence intervals for mean and median, plus two-sample hypothesis testing ($p$-value significance) against reference commands.
 * **🧠 Peak Memory Usage Display**: Real-time process peak memory (RSS) formatted in `B`, `KB`, `MB`, `GB` and displayed in terminal output.
 * **🛡️ Hardened Robustness & Security**: Protection against CSV formula injection (CWE-1236), safe integer range iteration avoiding overflows near `i32::MAX`, and input validation preventing zero-run crashes.
-* **🔄 Environment Iteration Forwarding**: `$JOULEX_ITERATION` and `$HYPERFINE_ITERATION` forwarded to `--prepare` and `--conclude` commands.
+* **🔄 Environment Iteration Forwarding**: `$PERFRATIO_ITERATION`, `$JOULEX_ITERATION`, and `$HYPERFINE_ITERATION` forwarded to `--prepare` and `--conclude` commands.
 * **⚙️ Modern CLI & Completions**: Unified `-e, --export <FILE>` auto-detecting formats by file extension, `--filter-failed` for parameter scans, and built-in `--generate-completions <SHELL>`.
 * **Statistical analysis across multiple runs**: Mean, median, stddev, min, max, user, and kernel CPU time.
 * **Support for arbitrary shell commands**: Raw or custom shells.
@@ -26,22 +26,22 @@ A multi-dimensional command-line benchmarking tool with **Performance per Watt (
 
 ### Basic benchmarks
 
-To run a benchmark, you can simply call `joulex <command>...` (or `hyperfine <command>...`). The argument(s) can be any
+To run a benchmark, you can simply call `perfratio <command>...` (or `hyperfine <command>...`). The argument(s) can be any
 shell command. For example:
 ```sh
-joulex 'sleep 0.3'
+perfratio 'sleep 0.3'
 ```
 
-Joulex will automatically determine the number of runs to perform for each command. By default,
+perfratio will automatically determine the number of runs to perform for each command. By default,
 it will perform *at least* 10 benchmarking runs and measure for at least 3 seconds. To change this,
 you can use the `-r`/`--runs` option:
 ```sh
-joulex --runs 5 'sleep 0.3'
+perfratio --runs 5 'sleep 0.3'
 ```
 
 If you want to compare the runtimes of different programs, you can pass multiple commands:
 ```sh
-joulex 'hexdump file' 'xxd file'
+perfratio 'hexdump file' 'xxd file'
 ```
 
 ### Understanding the output
@@ -103,9 +103,9 @@ hyperfine -L compiler gcc,clang '{compiler} -O2 main.cpp'
 >
 > - Prefer `-N`/`--shell=none`. The command is then split into arguments without a shell,
 >   so a value can at most become extra arguments, never shell code.
-> - Or quote the placeholder in the command, e.g. `joulex -L f "$files" "wc -l '{f}'"`. This only
+> - Or quote the placeholder in the command, e.g. `perfratio -L f "$files" "wc -l '{f}'"`. This only
 >   helps if the values cannot contain a single quote themselves.
-> - Validate untrusted values (e.g. allow only `[A-Za-z0-9._/-]`) before passing them to joulex.
+> - Validate untrusted values (e.g. allow only `[A-Za-z0-9._/-]`) before passing them to perfratio.
 
 ### Intermediate shell
 
@@ -184,7 +184,7 @@ like `--warmup`, `--prepare <cmd>`, `--setup <cmd>` or `--cleanup <cmd>`:
 ### Reducing noise
 
 Most "noisy" or irreproducible results come from the environment, not from the
-benchmarked command. `joulex --check-system` reports the usual suspects before
+benchmarked command. `perfratio --check-system` reports the usual suspects before
 benchmarking, with a hint for each problem (`--check-system=strict` aborts with
 exit code 4, e.g. on a CI benchmark runner):
 
@@ -202,7 +202,7 @@ Other things that help:
 - **Fixed CPU frequency:** use the `performance` governor, and disable turbo boost (see above).
 - **Pinning and priority:** `--affinity 2` keeps the command on one core, avoiding migrations and P-/E-core mixes; `--priority high` or `realtime` reduces preemption.
 - **Caches:** `--warmup N` (or `--warmup auto`) fills them. `--prepare 'sync; echo 3 | sudo tee /proc/sys/vm/drop_caches'` empties them before every run, for cold-cache benchmarks. `--first-run=separate` reports the cold first run on its own.
-- **Drift:** `--schedule round-robin` interleaves the commands, so slow drifts (thermal throttling, background jobs) affect all of them equally. joulex warns about trends, multimodal distributions and outlier-inflated variance.
+- **Drift:** `--schedule round-robin` interleaves the commands, so slow drifts (thermal throttling, background jobs) affect all of them equally. perfratio warns about trends, multimodal distributions and outlier-inflated variance.
 - **Shell overhead:** for very fast commands, `-N`/`--shell=none` avoids the intermediate shell.
 
 ## Installation
@@ -344,9 +344,9 @@ conda install -c conda-forge hyperfine
 
 ### With cargo (Linux, macOS, Windows)
 
-Joulex can be installed from source via [cargo](https://doc.rust-lang.org/cargo/):
+perfratio can be installed from source via [cargo](https://doc.rust-lang.org/cargo/):
 ```
-cargo install --locked joulex
+cargo install --locked perfratio
 ```
 
 Make sure that you use Rust 1.88 or newer.

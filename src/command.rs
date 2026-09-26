@@ -1152,7 +1152,7 @@ fn test_parameter_file_support() {
     writeln!(temp, "foo\r\nbar\n\nbaz\n").unwrap();
     let temp_path = temp.path().to_str().unwrap().to_string();
 
-    let matches = get_cli_arguments(vec!["joulex", "-F", "item", &temp_path, "echo {item}"]);
+    let matches = get_cli_arguments(vec!["perfratio", "-F", "item", &temp_path, "echo {item}"]);
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     assert_eq!(commands.iter().count(), 3);
     let names: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
@@ -1170,7 +1170,7 @@ fn test_parameter_file_and_list_combined() {
     let temp_path = temp.path().to_str().unwrap().to_string();
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-F",
         "num",
         &temp_path,
@@ -1188,7 +1188,7 @@ fn test_multiple_parameter_scans() {
     use crate::cli::get_cli_arguments;
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "a",
         "1",
@@ -1213,7 +1213,7 @@ fn test_parameter_scan_and_list_combined() {
     use crate::cli::get_cli_arguments;
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "threads",
         "1",
@@ -1248,7 +1248,7 @@ fn test_parameter_scan_and_file_combined() {
     let temp_path = temp.path().to_str().unwrap().to_string();
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "iter",
         "1",
@@ -1272,7 +1272,7 @@ fn test_multiple_parameter_scans_with_step_size_fails() {
     use crate::cli::get_cli_arguments;
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "a",
         "1",
@@ -1295,7 +1295,16 @@ fn test_multiple_parameter_scans_with_step_size_fails() {
 fn test_single_parameter_scan_with_step_size_succeeds() {
     use crate::cli::get_cli_arguments;
 
-    let matches = get_cli_arguments(vec!["joulex", "-P", "a", "1", "5", "-D", "2", "echo {a}"]);
+    let matches = get_cli_arguments(vec![
+        "perfratio",
+        "-P",
+        "a",
+        "1",
+        "5",
+        "-D",
+        "2",
+        "echo {a}",
+    ]);
     let commands = Commands::from_cli_arguments(&matches).unwrap().0;
     assert_eq!(commands.len(), 3);
     let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
@@ -1307,7 +1316,7 @@ fn test_parameter_combinations_exceeding_default_limit_fails() {
     use crate::cli::get_cli_arguments;
 
     let matches = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "a",
         "1",
@@ -1330,7 +1339,7 @@ fn test_parameter_combinations_max_benchmarks_override() {
 
     // 10 x 10 = 100 combinations. With --max-benchmarks 50 it should fail:
     let matches_fail = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "a",
         "1",
@@ -1350,7 +1359,7 @@ fn test_parameter_combinations_max_benchmarks_override() {
 
     // With --max-benchmarks 200 it should succeed:
     let matches_ok = get_cli_arguments(vec![
-        "joulex",
+        "perfratio",
         "-P",
         "a",
         "1",
@@ -1393,7 +1402,13 @@ fn test_with_iteration_substitutes_placeholder() {
 fn test_iteration_is_a_reserved_parameter_name() {
     use crate::cli::get_cli_arguments;
 
-    let matches = get_cli_arguments(vec!["joulex", "-L", "iteration", "1,2", "echo {iteration}"]);
+    let matches = get_cli_arguments(vec![
+        "perfratio",
+        "-L",
+        "iteration",
+        "1,2",
+        "echo {iteration}",
+    ]);
     let err = Commands::from_cli_arguments(&matches).unwrap_err();
     assert!(err.to_string().contains("is reserved"));
 }
@@ -1446,13 +1461,20 @@ fn test_argv_command_substitutes_parameters_per_argument() {
 #[test]
 fn test_argv_from_cli_arguments() {
     let matches = crate::cli::get_cli_arguments(vec![
-        "joulex", "-L", "n", "1,2", "--", "echo", "x {n}", "--flag",
+        "perfratio",
+        "-L",
+        "n",
+        "1,2",
+        "--",
+        "echo",
+        "x {n}",
+        "--flag",
     ]);
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     let lines: Vec<_> = commands.iter().map(|c| c.get_command_line()).collect();
     assert_eq!(lines, ["echo 'x 1' --flag", "echo 'x 2' --flag"]);
 
-    let matches = crate::cli::get_cli_arguments(vec!["joulex", "-n", "name", "--", "true"]);
+    let matches = crate::cli::get_cli_arguments(vec!["perfratio", "-n", "name", "--", "true"]);
     let commands = Commands::from_cli_arguments(&matches).unwrap();
     let names: Vec<_> = commands.iter().map(|c| c.get_name()).collect();
     assert_eq!(names, ["name"]);

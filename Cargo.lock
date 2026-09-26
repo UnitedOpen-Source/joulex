@@ -417,35 +417,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
-name = "joulex"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "approx",
- "assert_cmd",
- "clap",
- "clap_complete",
- "colored",
- "csv",
- "ctrlc",
- "indicatif",
- "insta",
- "libc",
- "nix",
- "once_cell",
- "predicates",
- "rand 0.8.8",
- "regex",
- "rust_decimal",
- "serde",
- "serde_json",
- "shell-words",
- "tempfile",
- "thiserror",
- "windows-sys 0.59.0",
-]
-
-[[package]]
 name = "js-sys"
 version = "0.3.82"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -532,6 +503,35 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
+
+[[package]]
+name = "perfratio"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "approx",
+ "assert_cmd",
+ "clap",
+ "clap_complete",
+ "colored",
+ "csv",
+ "ctrlc",
+ "indicatif",
+ "insta",
+ "libc",
+ "nix",
+ "once_cell",
+ "predicates",
+ "rand 0.8.8",
+ "regex",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "shell-words",
+ "tempfile",
+ "thiserror",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "portable-atomic"

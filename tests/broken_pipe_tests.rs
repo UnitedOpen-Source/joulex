@@ -1,4 +1,4 @@
-//! A closed stdout (e.g. `joulex … | head -1`) must not abort joulex or lose
+//! A closed stdout (e.g. `perfratio … | head -1`) must not abort perfratio or lose
 //! its exports (#187).
 
 // Only the raw command builder is used here (and nothing on Windows)
@@ -20,7 +20,7 @@ fn closed_stdout_neither_panics_nor_loses_exports() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    // Close the read end before joulex writes anything
+    // Close the read end before perfratio writes anything
     drop(child.stdout.take());
     let output = child.wait_with_output().unwrap();
 

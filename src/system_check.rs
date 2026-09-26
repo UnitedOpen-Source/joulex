@@ -9,7 +9,8 @@ use crate::output::colors;
 
 /// Hidden testing hook: read the Linux `/proc` and `/sys` files below this
 /// directory instead of `/`, on any platform.
-pub const FAKE_ROOT_ENV: &str = "JOULEX_SYSTEM_CHECK_ROOT";
+pub const FAKE_ROOT_ENV: &str = "PERFRATIO_SYSTEM_CHECK_ROOT";
+pub const LEGACY_FAKE_ROOT_ENV: &str = "JOULEX_SYSTEM_CHECK_ROOT";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
@@ -67,7 +68,9 @@ pub fn run_checks() -> Vec<Check> {
     let cpus = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(1);
-    if let Some(root) = std::env::var_os(FAKE_ROOT_ENV) {
+    if let Some(root) =
+        std::env::var_os(FAKE_ROOT_ENV).or_else(|| std::env::var_os(LEGACY_FAKE_ROOT_ENV))
+    {
         return linux_checks(Path::new(&root), cpus);
     }
     #[cfg(target_os = "linux")]

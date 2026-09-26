@@ -15,6 +15,7 @@ pub const SHELLS: [&str; 5] = ["bash", "zsh", "fish", "powershell", "elvish"];
 /// clap cannot express (port of hyperfine#896, see hyperfine#872).
 pub const FISH_COMMAND_COMPLETION: &str = "
 # Complete executables from $PATH for the benchmarked command (hyperfine#872)
+complete -c perfratio -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
 complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"
 ";
 
@@ -40,12 +41,12 @@ const STYLES: Styles = Styles::styled()
 
 /// Build the clap command for parsing command line arguments
 pub fn build_command() -> Command {
-    Command::new("joulex")
+    Command::new("perfratio")
         .version(crate_version!())
         .styles(STYLES)
         .next_line_help(true)
         .hide_possible_values(true)
-        .about("A multi-dimensional command-line benchmarking tool with energy and deep stats.")
+        .about("A multi-dimensional command-line benchmarking tool with Performance per Watt, Hardware Counter Ratios, and Deep Statistics.")
         .help_expected(true)
         .max_term_width(80)
         .arg(
@@ -53,7 +54,7 @@ pub fn build_command() -> Command {
                 .help("The command to benchmark. This can be the name of an executable, a command \
                        line like \"grep -i todo\" or a shell command like \"sleep 0.5 && echo test\". \
                        The latter is only available if the shell is not explicitly disabled via \
-                       '--shell=none'. If multiple commands are given, joulex will show a \
+                       '--shell=none'. If multiple commands are given, perfratio will show a \
                        comparison of the respective runtimes.")
                 .required_unless_present_any(["generate-completions", "import-json", "argv"])
                 .action(ArgAction::Append)
@@ -73,17 +74,17 @@ pub fn build_command() -> Command {
                        It is executed exactly as given: without a shell (like '--shell=none') \
                        and without re-splitting or unquoting, so no extra quoting is needed. \
                        Parameters ('{name}') are substituted in each argument separately.\n\n\
-                       Example:  joulex -w 3 -- grep -E 'a|b' \"my file.txt\"\n"),
+                       Example:  perfratio -w 3 -- grep -E 'a|b' \"my file.txt\"\n"),
         )
         .arg(
             Arg::new("import-json")
                 .long("import-json")
                 .action(ArgAction::Append)
                 .value_name("FILE")
-                .help("Import timing results from a JSON file previously exported by joulex/hyperfine. \
+                .help("Import timing results from a JSON file previously exported by perfratio/joulex/hyperfine. \
                        Multiple files can be specified. Can be combined with commands to benchmark or used \
                        on its own to re-export existing results to another format.\n\n\
-                       Example:  joulex --import-json baseline.json 'sleep 1'\n"),
+                       Example:  perfratio --import-json baseline.json 'sleep 1'\n"),
         )
         .arg(
             Arg::new("parameter-sample")
@@ -96,7 +97,7 @@ pub fn build_command() -> Command {
                        value. Every command sees the same values in the same order (a paired \
                        comparison); '--seed' changes the sequence. Can be combined with '-L'/'-P' \
                        (which still create separate benchmarks).\n\n\
-                       Example:  joulex --parameter-sample file a.txt,b.txt,c.txt 'wc -l {file}' \
+                       Example:  perfratio --parameter-sample file a.txt,b.txt,c.txt 'wc -l {file}' \
                        'grep -c . {file}'\n"),
         )
         .arg(
@@ -126,7 +127,7 @@ pub fn build_command() -> Command {
                 .help("Compare each benchmark with the result of the same command (name) in a \
                        JSON file exported earlier, e.g. on the main branch, and print a table \
                        with the relative change and its statistical significance.\n\n\
-                       Example:  joulex --compare baseline.json --fail-if-regressed 5% 'make'\n"),
+                       Example:  perfratio --compare baseline.json --fail-if-regressed 5% 'make'\n"),
         )
         .arg(
             Arg::new("fail-if-regressed")
@@ -185,7 +186,7 @@ pub fn build_command() -> Command {
                 .action(ArgAction::Set)
                 .value_name("NUM")
                 .help("Perform exactly NUM runs for each command. If this option is not specified, \
-                       joulex automatically determines the number of runs."),
+                       perfratio automatically determines the number of runs."),
         )
         .arg(
             Arg::new("setup")
@@ -286,12 +287,12 @@ pub fn build_command() -> Command {
                 .help(
                     "Perform benchmark runs for each value in the range MIN..MAX. Replaces the \
                      string '{VAR}' in each command by the current parameter value.\n\n  \
-                     Example:  joulex -P threads 1 8 'make -j {threads}'\n\n\
+                     Example:  perfratio -P threads 1 8 'make -j {threads}'\n\n\
                      This performs benchmarks for 'make -j 1', 'make -j 2', …, 'make -j 8'.\n\n\
                      The option can be specified multiple times and combined with --parameter-list \
                      or --parameter-file to run benchmarks for all possible parameter combinations.\n\n\
                      To have the value increase following different patterns, use shell arithmetic.\n\n  \
-                     Example: joulex -P size 0 3 'sleep $((2**{size}))'\n\n\
+                     Example: perfratio -P size 0 3 'sleep $((2**{size}))'\n\n\
                      This performs benchmarks with power of 2 increases: 'sleep 1', 'sleep 2', 'sleep 4', …\n\
                      The exact syntax may vary depending on your shell and OS."
                 ),
@@ -306,7 +307,7 @@ pub fn build_command() -> Command {
                 .help(
                     "This argument requires --parameter-scan to be specified as well. \
                      Traverse the range MIN..MAX in steps of DELTA.\n\n  \
-                     Example:  joulex -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
+                     Example:  perfratio -P delay 0.3 0.7 -D 0.2 'sleep {delay}'\n\n\
                      This performs benchmarks for 'sleep 0.3', 'sleep 0.5' and 'sleep 0.7'.",
                 ),
         )
@@ -321,7 +322,7 @@ pub fn build_command() -> Command {
                 .help(
                     "Perform benchmark runs for each value in the comma-separated list VALUES. \
                      Replaces the string '{VAR}' in each command by the current parameter value\
-                     .\n\nExample:  joulex -L compiler gcc,clang '{compiler} -O2 main.cpp'\n\n\
+                     .\n\nExample:  perfratio -L compiler gcc,clang '{compiler} -O2 main.cpp'\n\n\
                      This performs benchmarks for 'gcc -O2 main.cpp' and 'clang -O2 main.cpp'.\n\n\
                      The option can be specified multiple times and combined with --parameter-scan \
                      or --parameter-file to run benchmarks for all possible parameter combinations.\n\n\
@@ -339,7 +340,7 @@ pub fn build_command() -> Command {
                 .help(
                     "Perform benchmark runs for each line in FILE. \
                      Replaces the string '{VAR}' in each command by the current parameter value.\n\n\
-                     Example:  joulex -F url urls.txt 'curl {url}'\n\n\
+                     Example:  perfratio -F url urls.txt 'curl {url}'\n\n\
                      The option can be specified multiple times and combined with --parameter-scan \
                      or --parameter-list to run benchmarks for all possible parameter combinations.\n\n\
                      Note: lines are inserted verbatim and are not shell-escaped. Use \
@@ -432,7 +433,7 @@ pub fn build_command() -> Command {
                      When combined with '--filter-failed', the benchmark is kept as long as at least \
                      one run succeeded.\n\n\
                      Example:\n\n  \
-                       joulex --ignore-failure --omit-failed-runs --runs 20 './flaky-test.sh'",
+                       perfratio --ignore-failure --omit-failed-runs --runs 20 './flaky-test.sh'",
                 ),
         )
         .arg(
@@ -635,7 +636,7 @@ pub fn build_command() -> Command {
                 .value_name("KEY=VALUE")
                 .help("Attach a label to the JSON and CSV exports (can be given multiple times), \
                        e.g. --label commit=$GITHUB_SHA --label runner=graviton3. Labels appear \
-                       under 'joulex.labels' in JSON and as 'label_KEY' columns in CSV."),
+                       under 'perfratio.labels' in JSON and as 'label_KEY' columns in CSV."),
         )
         .arg(
             Arg::new("export-markdown-runs")
@@ -752,8 +753,8 @@ pub fn build_command() -> Command {
                        <FILE>:   Write the output to the given file.\n\n\
                     This option can be specified once for all commands or multiple times, once for \
                     each command. Note: If you want to log the output of each and every iteration, \
-                    you can use a shell redirection and the '$JOULEX_ITERATION' (or '$HYPERFINE_ITERATION') environment variable:\n    \
-                    joulex 'my-command > output-${JOULEX_ITERATION}.log'\n\n",
+                    you can use a shell redirection and the '$PERFRATIO_ITERATION' (or '$JOULEX_ITERATION', '$HYPERFINE_ITERATION') environment variable:\n    \
+                    perfratio 'my-command > output-${PERFRATIO_ITERATION}.log'\n\n",
                 ),
         )
         .arg(
@@ -838,7 +839,7 @@ pub fn build_command() -> Command {
                        '--check-system' (or '=warn') only reports. '--check-system=strict' \
                        aborts with exit code 4 if any check does not pass, which is useful on \
                        dedicated benchmark machines and CI runners.\n\n\
-                       Example:  joulex --check-system=strict 'make'"),
+                       Example:  perfratio --check-system=strict 'make'"),
         )
         .arg(
             Arg::new("priority")
@@ -852,18 +853,18 @@ pub fn build_command() -> Command {
                        Default: normal (inherited).")
                 .long_help("Scheduling priority of every benchmarked command (and \
                        --prepare/--conclude/--setup/--cleanup).\n\n\
-                       'normal' (default): inherit joulex's priority.\n\
+                       'normal' (default): inherit perfratio's priority.\n\
                        'high': nice -20 (Linux, macOS), HIGH_PRIORITY_CLASS (Windows).\n\
                        'idle': SCHED_IDLE (Linux), nice 19 (macOS), IDLE_PRIORITY_CLASS (Windows).\n\
                        'realtime': SCHED_FIFO at the maximum priority (Linux), \
                        REALTIME_PRIORITY_CLASS (Windows). Not available on macOS.\n\n\
                        'high' and 'realtime' need privileges: root or \
-                       'sudo setcap cap_sys_nice+ep \"$(command -v joulex)\"' on Linux, root on \
+                       'sudo setcap cap_sys_nice+ep \"$(command -v perfratio)\"' on Linux, root on \
                        macOS, administrator rights on Windows (otherwise 'realtime' silently \
                        becomes 'high').\n\n\
                        Warning: a 'realtime' command that never blocks can starve the rest of \
-                       the system, including joulex itself.\n\n\
-                       Example:  sudo joulex --priority=realtime './compute'"),
+                       the system, including perfratio itself.\n\n\
+                       Example:  sudo perfratio --priority=realtime './compute'"),
         )
         .arg(
             Arg::new("resource-usage")
@@ -898,7 +899,7 @@ pub fn build_command() -> Command {
                        requested number of runs is still measured. If '--warmup' is used with \
                        'separate', the first warmup run is the cold one: it is reported \
                        (wall-clock time only) and no timing run is excluded.\n\n\
-                       Example:  joulex --first-run=separate 'node app.js'"),
+                       Example:  perfratio --first-run=separate 'node app.js'"),
         )
         .arg(
             Arg::new("discard-outliers")
@@ -923,7 +924,7 @@ pub fn build_command() -> Command {
                        discarded and a warning is shown instead.\n\n\
                        The indices of discarded runs are exported as 'discarded_outliers'; the \
                        per-run arrays in the JSON export only contain the kept runs.\n\n\
-                       Example:  joulex --discard-outliers=20 'make'"),
+                       Example:  perfratio --discard-outliers=20 'make'"),
         )
         .arg(
             Arg::new("suppress-outlier-warnings")

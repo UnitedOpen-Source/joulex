@@ -6,7 +6,7 @@ use common::hyperfine;
 use predicates::prelude::*;
 use serde_json::Value;
 
-/// Run joulex with `args` and the JSON export, and return (stdout, results).
+/// Run perfratio with `args` and the JSON export, and return (stdout, results).
 fn run(args: &[&str]) -> (String, Vec<Value>) {
     let dir = tempfile::tempdir().unwrap();
     let json = dir.path().join("out.json");
