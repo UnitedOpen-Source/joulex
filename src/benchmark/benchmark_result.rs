@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::metric::Metric;
 use crate::util::units::Second;
 
 /// Set of values that will be exported.
@@ -339,6 +340,105 @@ impl BenchmarkResult {
     pub fn has_failure(&self) -> bool {
         self.exit_codes.iter().any(|code| *code != Some(0))
     }
+
+    /// Extracts samples corresponding to the specified metric.
+    pub fn primary_samples(&self, metric: Metric) -> Option<Vec<f64>> {
+        match metric {
+            Metric::Wall => self.times.clone(),
+            Metric::User => self.user_times.clone(),
+            Metric::System => self.system_times.clone(),
+            Metric::Cpu => {
+                if let (Some(u), Some(s)) = (&self.user_times, &self.system_times) {
+                    Some(u.iter().zip(s.iter()).map(|(&a, &b)| a + b).collect())
+                } else {
+                    None
+                }
+            }
+            Metric::Energy => self.energy_joules.clone(),
+            Metric::Memory => self
+                .memory_usage_byte
+                .as_ref()
+                .map(|m| m.iter().map(|&b| b as f64).collect()),
+        }
+    }
+
+    /// Computes the mean value for the specified metric.
+    pub fn primary_mean(&self, metric: Metric) -> f64 {
+        match metric {
+            Metric::Wall => self.mean,
+            Metric::User => self.user,
+            Metric::System => self.system,
+            Metric::Cpu => self.user + self.system,
+            Metric::Energy => self.mean_energy_joules.unwrap_or(0.0),
+            Metric::Memory => {
+                if let Some(mem) = &self.memory_usage_byte {
+                    if !mem.is_empty() {
+                        let sum: u64 = mem.iter().sum();
+                        return sum as f64 / mem.len() as f64;
+                    }
+                }
+                0.0
+            }
+        }
+    }
+
+    /// Computes the standard deviation for the specified metric.
+    pub fn primary_stddev(&self, metric: Metric) -> Option<f64> {
+        match metric {
+            Metric::Wall => self.stddev,
+            Metric::User => self.user_times.as_ref().and_then(|times| {
+                if times.len() > 1 {
+                    Some(crate::stats::basic::standard_deviation(
+                        times,
+                        Some(self.user),
+                    ))
+                } else {
+                    None
+                }
+            }),
+            Metric::System => self.system_times.as_ref().and_then(|times| {
+                if times.len() > 1 {
+                    Some(crate::stats::basic::standard_deviation(
+                        times,
+                        Some(self.system),
+                    ))
+                } else {
+                    None
+                }
+            }),
+            Metric::Cpu => self.primary_samples(Metric::Cpu).and_then(|samples| {
+                if samples.len() > 1 {
+                    Some(crate::stats::basic::standard_deviation(
+                        &samples,
+                        Some(self.user + self.system),
+                    ))
+                } else {
+                    None
+                }
+            }),
+            Metric::Energy => self.energy_joules.as_ref().and_then(|samples| {
+                if samples.len() > 1 {
+                    Some(crate::stats::basic::standard_deviation(
+                        samples,
+                        self.mean_energy_joules,
+                    ))
+                } else {
+                    None
+                }
+            }),
+            Metric::Memory => self.primary_samples(Metric::Memory).and_then(|samples| {
+                if samples.len() > 1 {
+                    let mean = self.primary_mean(Metric::Memory);
+                    Some(crate::stats::basic::standard_deviation(
+                        &samples,
+                        Some(mean),
+                    ))
+                } else {
+                    None
+                }
+            }),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -437,4 +537,51 @@ fn per_run_parameter_values_and_stats() {
         None
     );
     assert_eq!(PerRunParameterValues::new(&per_run, &[1.0]), None);
+}
+
+#[test]
+fn test_primary_samples_and_metrics() {
+    let result = BenchmarkResult {
+        mean: 10.0,
+        stddev: Some(1.0),
+        user: 6.0,
+        system: 4.0,
+        times: Some(vec![9.0, 11.0]),
+        user_times: Some(vec![5.5, 6.5]),
+        system_times: Some(vec![3.5, 4.5]),
+        memory_usage_byte: Some(vec![1000, 2000]),
+        mean_energy_joules: Some(50.0),
+        energy_joules: Some(vec![45.0, 55.0]),
+        ..Default::default()
+    };
+
+    // Primary samples
+    assert_eq!(result.primary_samples(Metric::Wall), Some(vec![9.0, 11.0]));
+    assert_eq!(result.primary_samples(Metric::User), Some(vec![5.5, 6.5]));
+    assert_eq!(result.primary_samples(Metric::System), Some(vec![3.5, 4.5]));
+    assert_eq!(result.primary_samples(Metric::Cpu), Some(vec![9.0, 11.0]));
+    assert_eq!(
+        result.primary_samples(Metric::Energy),
+        Some(vec![45.0, 55.0])
+    );
+    assert_eq!(
+        result.primary_samples(Metric::Memory),
+        Some(vec![1000.0, 2000.0])
+    );
+
+    // Primary mean
+    assert_eq!(result.primary_mean(Metric::Wall), 10.0);
+    assert_eq!(result.primary_mean(Metric::User), 6.0);
+    assert_eq!(result.primary_mean(Metric::System), 4.0);
+    assert_eq!(result.primary_mean(Metric::Cpu), 10.0);
+    assert_eq!(result.primary_mean(Metric::Energy), 50.0);
+    assert_eq!(result.primary_mean(Metric::Memory), 1500.0);
+
+    // Primary stddev
+    assert!(result.primary_stddev(Metric::Wall).is_some());
+    assert!(result.primary_stddev(Metric::User).is_some());
+    assert!(result.primary_stddev(Metric::System).is_some());
+    assert!(result.primary_stddev(Metric::Cpu).is_some());
+    assert!(result.primary_stddev(Metric::Energy).is_some());
+    assert!(result.primary_stddev(Metric::Memory).is_some());
 }
