@@ -144,6 +144,49 @@ pub struct BenchmarkResult {
     /// The configured timeout duration in seconds, if --timeout was used
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout: Option<Second>,
+
+    /// Custom metrics extracted via --output-metric
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_metrics: Option<BTreeMap<String, Vec<f64>>>,
+
+    /// Statistical summary of custom metrics
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_metrics_summary: Option<BTreeMap<String, MetricSummary>>,
+}
+
+/// Statistical summary of a custom output metric
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MetricSummary {
+    pub mean: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stddev: Option<f64>,
+    pub median: f64,
+    pub min: f64,
+    pub max: f64,
+}
+
+impl MetricSummary {
+    pub fn from_values(values: &[f64]) -> Option<Self> {
+        if values.is_empty() {
+            return None;
+        }
+        let mean = crate::stats::basic::mean(values);
+        let median = crate::stats::basic::median(values);
+        let stddev = if values.len() > 1 {
+            Some(crate::stats::basic::standard_deviation(values, Some(mean)))
+        } else {
+            None
+        };
+        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        Some(Self {
+            mean,
+            stddev,
+            median,
+            min,
+            max,
+        })
+    }
 }
 
 /// `--subtract CMD`: the measured baseline.
