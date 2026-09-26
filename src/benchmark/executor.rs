@@ -17,6 +17,7 @@ use super::timing_result::TimingResult;
 use crate::stats::basic::mean;
 use anyhow::{anyhow, bail, Context, Result};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BenchmarkIteration {
     NonBenchmarkRun,
     Warmup(u64),
@@ -73,6 +74,8 @@ struct ProcessSettings<'a> {
     timeout: Option<std::time::Duration>,
     /// --until
     until: Option<&'a crate::options::UntilSettings>,
+    /// --output-metric
+    output_metrics: &'a [crate::output_metric::OutputMetric],
 }
 
 impl<'a> ProcessSettings<'a> {
@@ -82,6 +85,7 @@ impl<'a> ProcessSettings<'a> {
             priority: options.priority,
             timeout: options.timeout,
             until: options.until.as_ref(),
+            output_metrics: &options.output_metrics,
         }
     }
 }
@@ -100,17 +104,26 @@ fn run_command_and_measure_common(
         priority,
         timeout,
         until,
+        output_metrics,
     } = process;
-    let until = match iteration {
-        BenchmarkIteration::NonBenchmarkRun => None,
-        BenchmarkIteration::Warmup(_) | BenchmarkIteration::Benchmark(_) => until,
+    let (until, capture_metrics) = match iteration {
+        BenchmarkIteration::NonBenchmarkRun => (None, false),
+        BenchmarkIteration::Warmup(_) | BenchmarkIteration::Benchmark(_) => {
+            (until, !output_metrics.is_empty())
+        }
     };
 
     let stdin = command_input_policy.get_stdin()?;
     let (stdout, stderr) = match until {
         Some(u) if !u.match_stderr => (std::process::Stdio::piped(), std::process::Stdio::null()),
         Some(_) => (std::process::Stdio::null(), std::process::Stdio::piped()),
-        None => command_output_policy.get_stdout_stderr()?,
+        None => {
+            let (mut out, err) = command_output_policy.get_stdout_stderr()?;
+            if capture_metrics {
+                out = std::process::Stdio::piped();
+            }
+            (out, err)
+        }
     };
     command.stdin(stdin).stdout(stdout).stderr(stderr);
 
@@ -134,22 +147,37 @@ fn run_command_and_measure_common(
 
     let interrupted_before = crate::util::interrupt::interrupted();
     let capture = *command_output_policy == CommandOutputPolicy::CaptureTail;
-    let result = execute_and_measure(command, affinity, priority, capture, timeout, until)
-        .map_err(|error| {
-            // A priority that needs privileges fails in the child: explain how
-            // to get them
-            let denied = error
-                .downcast_ref::<std::io::Error>()
-                .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
-            match crate::util::priority::permission_hint(priority) {
-                Some(hint) if denied => error.context(format!(
-                    "could not set '--priority {}': {hint}",
-                    priority.as_str()
-                )),
-                _ => error,
-            }
-        })
-        .with_context(|| format!("Failed to run command '{command_name}'"))?;
+    let stdout_capture_limit = if capture_metrics {
+        Some(1 << 20)
+    } else if capture {
+        Some(crate::timer::CAPTURE_LIMIT)
+    } else {
+        None
+    };
+    let mut result = execute_and_measure(
+        command,
+        affinity,
+        priority,
+        capture,
+        timeout,
+        until,
+        stdout_capture_limit,
+    )
+    .map_err(|error| {
+        // A priority that needs privileges fails in the child: explain how
+        // to get them
+        let denied = error
+            .downcast_ref::<std::io::Error>()
+            .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied);
+        match crate::util::priority::permission_hint(priority) {
+            Some(hint) if denied => error.context(format!(
+                "could not set '--priority {}': {hint}",
+                priority.as_str()
+            )),
+            _ => error,
+        }
+    })
+    .with_context(|| format!("Failed to run command '{command_name}'"))?;
 
     // If an interruption occurred while running the command, discard the run
     // regardless of whether the child exited 0 (e.g. child caught SIGINT and exited gracefully).
@@ -216,6 +244,44 @@ fn run_command_and_measure_common(
             }
         } else if let Some(captured) = &result.captured {
             warn_failed_run_output(command_name, iteration, captured);
+        }
+    }
+
+    if capture_metrics {
+        let stdout = result
+            .captured
+            .as_ref()
+            .map(|c| c.stdout.as_slice())
+            .unwrap_or(&[]);
+        for metric in output_metrics {
+            if let Some(val) = metric.extract(stdout) {
+                result.custom_metrics.insert(metric.name.clone(), val);
+            } else {
+                let should_fail = match command_failure_action {
+                    CmdFailureAction::RaiseError => true,
+                    CmdFailureAction::IgnoreAllFailures => false,
+                    CmdFailureAction::IgnoreSpecificFailures(_) => true,
+                };
+                let when = match iteration {
+                    BenchmarkIteration::NonBenchmarkRun => "a non-benchmark run".to_string(),
+                    BenchmarkIteration::Warmup(0) => "the first warmup run".to_string(),
+                    BenchmarkIteration::Warmup(i) => format!("warmup iteration {i}"),
+                    BenchmarkIteration::Benchmark(0) => "the first benchmark run".to_string(),
+                    BenchmarkIteration::Benchmark(i) => format!("benchmark iteration {i}"),
+                };
+                if should_fail {
+                    bail!(
+                        "Metric '{}' could not be extracted from output in {when}. Use the '-i'/'--ignore-failure' option if you want to ignore this.",
+                        metric.name
+                    );
+                } else {
+                    eprintln!(
+                        "{} metric '{}' could not be extracted from output in {when} (ignored).",
+                        crate::output::colors::yellow("Warning:"),
+                        metric.name
+                    );
+                }
+            }
         }
     }
 
@@ -341,6 +407,7 @@ impl Executor for RawExecutor<'_> {
                 energy_joules: None,
                 counters: result.counters,
                 timed_out: result.timed_out,
+                custom_metrics: result.custom_metrics,
             },
             result.status,
         ))
@@ -424,7 +491,7 @@ impl Executor for ShellExecutor<'_> {
         )?;
 
         // Subtract shell spawning time
-        if let Some(spawning_time) = self.shell_spawning_time {
+        if let Some(ref spawning_time) = self.shell_spawning_time {
             result.time_real = (result.time_real - spawning_time.time_real).max(0.0);
             result.time_user = (result.time_user - spawning_time.time_user).max(0.0);
             result.time_system = (result.time_system - spawning_time.time_system).max(0.0);
@@ -439,6 +506,7 @@ impl Executor for ShellExecutor<'_> {
                 energy_joules: None,
                 counters: result.counters,
                 timed_out: result.timed_out,
+                custom_metrics: result.custom_metrics,
             },
             result.status,
         ))
@@ -507,6 +575,7 @@ impl Executor for ShellExecutor<'_> {
             energy_joules: None,
             counters: None,
             timed_out: false,
+            custom_metrics: std::collections::BTreeMap::new(),
         });
 
         Ok(())
@@ -518,7 +587,9 @@ impl Executor for ShellExecutor<'_> {
 
     fn time_overhead(&self) -> Second {
         // Zero before `calibrate()` has measured the shell spawning time
-        self.shell_spawning_time.map_or(0.0, |t| t.time_real)
+        self.shell_spawning_time
+            .as_ref()
+            .map_or(0.0, |t| t.time_real)
     }
 }
 
@@ -588,6 +659,7 @@ impl Executor for MockExecutor {
                 energy_joules: None,
                 counters: None,
                 timed_out,
+                custom_metrics: std::collections::BTreeMap::new(),
             },
             status,
         ))

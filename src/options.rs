@@ -375,6 +375,9 @@ pub struct Options {
 
     /// `--until`: stop timer upon readiness output pattern
     pub until: Option<UntilSettings>,
+
+    /// `--output-metric`: custom metrics to extract from command output
+    pub output_metrics: Vec<crate::output_metric::OutputMetric>,
 }
 
 impl Default for Options {
@@ -417,6 +420,7 @@ impl Default for Options {
             allow_setup_with_round_robin: false,
             timeout: None,
             until: None,
+            output_metrics: Vec::new(),
         }
     }
 }
@@ -660,6 +664,24 @@ impl Options {
                 pattern: val.as_bytes().to_vec(),
                 match_stderr: matches.get_flag("until-stderr"),
             });
+        }
+        if let Some(metrics) = matches.get_many::<String>("output-metric") {
+            for m in metrics {
+                let parsed = m
+                    .parse::<crate::output_metric::OutputMetric>()
+                    .map_err(|e| OptionsError::InvalidOutputMetric(format!("{e:#}")))?;
+                if options
+                    .output_metrics
+                    .iter()
+                    .any(|existing| existing.name == parsed.name)
+                {
+                    return Err(OptionsError::InvalidOutputMetric(format!(
+                        "duplicate metric name '{}'",
+                        parsed.name
+                    )));
+                }
+                options.output_metrics.push(parsed);
+            }
         }
 
         options.command_input_policy = if let Some(path_str) = matches.get_one::<String>("input") {

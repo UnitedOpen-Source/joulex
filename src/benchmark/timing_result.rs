@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::util::units::Second;
 
@@ -45,7 +46,7 @@ impl ResourceSeries {
 }
 
 /// Results from timing a single command
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct TimingResult {
     /// Wall clock time
     pub time_real: Second,
@@ -67,6 +68,9 @@ pub struct TimingResult {
 
     /// Whether this run timed out
     pub timed_out: bool,
+
+    /// Custom metrics extracted via --output-metric
+    pub custom_metrics: BTreeMap<String, f64>,
 }
 
 #[test]

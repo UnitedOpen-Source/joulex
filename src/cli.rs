@@ -531,7 +531,7 @@ pub fn build_command() -> Command {
                 .visible_alias("ready-when")
                 .action(ArgAction::Set)
                 .value_name("TEXT")
-                .conflicts_with_all(["show-output", "show-output-on-failure", "output"])
+                .conflicts_with_all(["show-output", "show-output-on-failure", "output", "output-metric"])
                 .help("Stop the timer as soon as the command writes TEXT to stdout (or stderr \
                        with --until-stderr), then terminate the process. A run that exits \
                        without printing TEXT fails."),
@@ -542,6 +542,17 @@ pub fn build_command() -> Command {
                 .action(ArgAction::SetTrue)
                 .requires("until")
                 .help("Match the pattern specified by --until against stderr instead of stdout."),
+        )
+        .arg(
+            Arg::new("output-metric")
+                .long("output-metric")
+                .action(ArgAction::Append)
+                .value_name("NAME=REGEX")
+                .conflicts_with_all(["show-output", "output", "until"])
+                .help("Extract a custom numeric metric from the command's standard output using \
+                       the regular expression REGEX, which must contain at least one capture group. \
+                       The value is extracted from the first capture group of the last match in the output. \
+                       Can be specified multiple times for different metrics."),
         )
         .arg(
             Arg::new("precision")

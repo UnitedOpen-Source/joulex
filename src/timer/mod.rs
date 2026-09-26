@@ -49,6 +49,8 @@ pub struct TimerResult {
     pub timed_out: bool,
     /// Whether `--until` was active and matched the pattern
     pub until_matched: Option<bool>,
+    /// Extracted custom metrics
+    pub custom_metrics: std::collections::BTreeMap<String, f64>,
 }
 
 #[cfg(windows)]
@@ -241,6 +243,7 @@ pub fn execute_and_measure(
     capture: bool,
     timeout: Option<std::time::Duration>,
     until: Option<&crate::options::UntilSettings>,
+    stdout_capture_limit: Option<usize>,
 ) -> Result<TimerResult> {
     // On Linux the affinity is applied by the caller (pre_exec); on other
     // Unix systems --affinity is rejected during option validation. The
@@ -442,7 +445,10 @@ pub fn execute_and_measure(
             .filter(|_| capture)
             .map(|stderr| std::thread::spawn(move || read_tail(stderr, CAPTURE_LIMIT)));
         let stdout_tail = match child.stdout.take() {
-            Some(stdout) if capture => Some(read_tail(stdout, CAPTURE_LIMIT)),
+            Some(stdout) if capture || stdout_capture_limit.is_some() => {
+                let limit = stdout_capture_limit.unwrap_or(CAPTURE_LIMIT);
+                Some(read_tail(stdout, limit))
+            }
             // CommandOutputPolicy::Pipe
             Some(stdout) => {
                 discard(stdout);
@@ -478,12 +484,16 @@ pub fn execute_and_measure(
             counters = None;
         }
 
-        captured = capture.then(|| CapturedOutput {
-            stdout: stdout_tail.unwrap_or_default(),
-            stderr: stderr_tail
-                .and_then(|thread| thread.join().ok())
-                .unwrap_or_default(),
-        });
+        captured = if capture || stdout_capture_limit.is_some() {
+            Some(CapturedOutput {
+                stdout: stdout_tail.unwrap_or_default(),
+                stderr: stderr_tail
+                    .and_then(|thread| thread.join().ok())
+                    .unwrap_or_default(),
+            })
+        } else {
+            None
+        };
         until_matched = None;
     }
 
@@ -497,6 +507,7 @@ pub fn execute_and_measure(
         captured,
         timed_out,
         until_matched,
+        custom_metrics: std::collections::BTreeMap::new(),
     })
 }
 

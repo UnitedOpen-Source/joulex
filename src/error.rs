@@ -78,6 +78,8 @@ pub enum OptionsError<'a> {
     InvalidTimeout(String, String),
     #[error("The --until pattern cannot be empty")]
     EmptyUntilPattern,
+    #[error("Invalid '--output-metric': {0}")]
+    InvalidOutputMetric(String),
 }
 
 #[derive(Debug, Error)]

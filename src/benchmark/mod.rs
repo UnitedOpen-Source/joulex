@@ -69,6 +69,8 @@ pub struct BenchmarkRunner<'a> {
     pub baseline: Option<benchmark_result::Baseline>,
     /// Whether this runner timed out (--timeout <DURATION>)
     pub timed_out: bool,
+    /// Extracted custom metrics per run
+    pub custom_metrics: std::collections::BTreeMap<String, Vec<f64>>,
 }
 
 /// "1%", "0.5%"
@@ -150,6 +152,7 @@ impl<'a> BenchmarkRunner<'a> {
             cold_warmup_time: None,
             baseline: None,
             timed_out: false,
+            custom_metrics: std::collections::BTreeMap::new(),
         }
     }
 
@@ -493,6 +496,9 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(0)),
         );
+        for (name, val) in res.custom_metrics {
+            self.custom_metrics.entry(name).or_default().push(val);
+        }
         self.all_succeeded = self.all_succeeded && success;
 
         Ok(())
@@ -532,6 +538,9 @@ impl<'a> BenchmarkRunner<'a> {
             self.command
                 .per_run_values(&BenchmarkIteration::Benchmark(iteration)),
         );
+        for (name, val) in res.custom_metrics {
+            self.custom_metrics.entry(name).or_default().push(val);
+        }
         self.all_succeeded = self.all_succeeded && success;
 
         self.run_conclusion(BenchmarkIteration::Benchmark(iteration))?;
@@ -585,6 +594,11 @@ impl<'a> BenchmarkRunner<'a> {
                 .iter()
                 .map(|&index| self.per_run_values[index].clone())
                 .collect();
+        }
+        for values in self.custom_metrics.values_mut() {
+            if values.len() == run_count {
+                *values = select(values, keep);
+            }
         }
     }
 
@@ -759,6 +773,18 @@ impl<'a> BenchmarkRunner<'a> {
         let is_interrupted = crate::util::interrupt::interrupted() && (runs_done as u64) < planned;
         let runs_planned = if is_interrupted { Some(planned) } else { None };
 
+        let (custom_metrics, custom_metrics_summary) = if !self.custom_metrics.is_empty() {
+            let mut summary_map = std::collections::BTreeMap::new();
+            for (name, values) in &self.custom_metrics {
+                if let Some(summary) = benchmark_result::MetricSummary::from_values(values) {
+                    summary_map.insert(name.clone(), summary);
+                }
+            }
+            (Some(self.custom_metrics.clone()), Some(summary_map))
+        } else {
+            (None, None)
+        };
+
         if self.options.output_style != OutputStyleOption::Disabled {
             if print_header {
                 let suffix = if is_interrupted {
@@ -896,6 +922,30 @@ impl<'a> BenchmarkRunner<'a> {
                     colors::blue(mem_str),
                     suffix,
                 );
+                }
+
+                if let Some(summaries) = &custom_metrics_summary {
+                    for (name, summary) in summaries {
+                        if let Some(stddev) = summary.stddev {
+                            crate::outln!(
+                                "  {} ({} ± {}):    {:>width$} ± {:>width$}",
+                                name,
+                                colors::green("mean").bold(),
+                                colors::green("σ"),
+                                colors::green(format!("{:.3}", summary.mean)).bold(),
+                                colors::green(format!("{:.3}", stddev)),
+                                width = width
+                            );
+                        } else {
+                            crate::outln!(
+                                "  {} ({}):        {:>width$}",
+                                name,
+                                colors::green("mean").bold(),
+                                colors::green(format!("{:.3}", summary.mean)).bold(),
+                                width = width
+                            );
+                        }
+                    }
                 }
 
                 if let Some(warmup) = self.warmup.filter(|w| w.auto) {
@@ -1217,6 +1267,8 @@ impl<'a> BenchmarkRunner<'a> {
             } else {
                 None
             },
+            custom_metrics,
+            custom_metrics_summary,
         })
     }
 }

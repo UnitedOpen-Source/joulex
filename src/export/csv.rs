@@ -47,9 +47,15 @@ impl Exporter for CsvExporter {
         let mut writer = WriterBuilder::new().from_writer(vec![]);
 
         let mut all_param_names = BTreeSet::new();
+        let mut all_metric_names = BTreeSet::new();
         for res in results {
             for param_name in res.parameters.keys() {
                 all_param_names.insert(param_name.as_str());
+            }
+            if let Some(metrics) = &res.custom_metrics_summary {
+                for metric_name in metrics.keys() {
+                    all_metric_names.insert(metric_name.as_str());
+                }
             }
         }
 
@@ -72,6 +78,13 @@ impl Exporter for CsvExporter {
             headers.push(Cow::Borrowed(b"relative_speed_stddev"));
             for key in self.labels.keys() {
                 headers.push(Cow::Owned(format!("label_{key}").into_bytes()));
+            }
+            for metric_name in &all_metric_names {
+                headers.push(Cow::Owned(format!("mean_{metric_name}").into_bytes()));
+                headers.push(Cow::Owned(format!("stddev_{metric_name}").into_bytes()));
+                headers.push(Cow::Owned(format!("median_{metric_name}").into_bytes()));
+                headers.push(Cow::Owned(format!("min_{metric_name}").into_bytes()));
+                headers.push(Cow::Owned(format!("max_{metric_name}").into_bytes()));
             }
 
             writer.write_record(headers)?;
@@ -150,6 +163,31 @@ impl Exporter for CsvExporter {
             ));
             for value in self.labels.values() {
                 fields.push(sanitize_csv_value(value));
+            }
+            for metric_name in &all_metric_names {
+                if let Some(summary) = res
+                    .custom_metrics_summary
+                    .as_ref()
+                    .and_then(|m| m.get(*metric_name))
+                {
+                    fields.push(Cow::Owned(summary.mean.to_string().into_bytes()));
+                    fields.push(Cow::Owned(
+                        summary
+                            .stddev
+                            .map(|s| s.to_string())
+                            .unwrap_or_default()
+                            .into_bytes(),
+                    ));
+                    fields.push(Cow::Owned(summary.median.to_string().into_bytes()));
+                    fields.push(Cow::Owned(summary.min.to_string().into_bytes()));
+                    fields.push(Cow::Owned(summary.max.to_string().into_bytes()));
+                } else {
+                    fields.push(Cow::Borrowed(b""));
+                    fields.push(Cow::Borrowed(b""));
+                    fields.push(Cow::Borrowed(b""));
+                    fields.push(Cow::Borrowed(b""));
+                    fields.push(Cow::Borrowed(b""));
+                }
             }
             writer.write_record(fields)?;
         }
@@ -553,4 +591,49 @@ fn test_csv_heterogeneous_parameters() {
     cmd_a,1,0,1,0.5,0.5,1,1,val1,,1,
     cmd_b,2,0,2,1,1,2,2,,val2,2,
     "#);
+}
+
+#[test]
+fn test_csv_with_custom_metrics() {
+    use crate::benchmark::benchmark_result::MetricSummary;
+    use std::collections::BTreeMap;
+
+    let exporter = CsvExporter::default();
+
+    let mut metrics_a = BTreeMap::new();
+    metrics_a.insert(
+        "latency".to_string(),
+        MetricSummary {
+            mean: 12.5,
+            stddev: Some(0.5),
+            median: 12.5,
+            min: 12.0,
+            max: 13.0,
+        },
+    );
+
+    let results = vec![BenchmarkResult {
+        command: String::from("cmd_a"),
+        command_with_unused_parameters: String::from("cmd_a"),
+        mean: 1.0,
+        stddev: Some(0.1),
+        median: 1.0,
+        user: 0.5,
+        system: 0.5,
+        min: 0.9,
+        max: 1.1,
+        times: Some(vec![1.0]),
+        custom_metrics_summary: Some(metrics_a),
+        ..Default::default()
+    }];
+
+    let actual = String::from_utf8(
+        exporter
+            .serialize(&results, None, Some(Unit::Second), SortOrder::Command)
+            .unwrap(),
+    )
+    .unwrap();
+
+    assert!(actual.starts_with("command,mean,stddev,median,user,system,min,max,relative_speed,relative_speed_stddev,mean_latency,stddev_latency,median_latency,min_latency,max_latency\n"));
+    assert!(actual.contains("cmd_a,1,0.1,1,0.5,0.5,0.9,1.1,1,,12.5,0.5,12.5,12,13\n"));
 }

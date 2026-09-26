@@ -27,6 +27,7 @@ pub mod import;
 pub mod options;
 pub mod outlier_detection;
 pub mod output;
+pub mod output_metric;
 pub mod parameter;
 pub mod stats;
 pub mod system_check;
