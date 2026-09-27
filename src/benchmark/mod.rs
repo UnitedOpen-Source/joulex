@@ -936,7 +936,7 @@ impl<'a> BenchmarkRunner<'a> {
                                 colors::green("mean").bold(),
                                 colors::green("σ"),
                                 colors::green(format!("{:.3}", summary.mean)).bold(),
-                                colors::green(format!("{:.3}", stddev)),
+                                colors::green(format!("{stddev:.3}")),
                                 width = width
                             );
                         } else {
