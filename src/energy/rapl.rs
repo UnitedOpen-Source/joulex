@@ -170,7 +170,7 @@ impl LinuxRaplSampler {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
     use tempfile::tempdir;
