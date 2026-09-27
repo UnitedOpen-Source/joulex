@@ -29,12 +29,6 @@ mod unix {
     /// subtracted: under CPU load, that subtraction is the main noise source.
     const TWO_GROUPS: &str =
         "sh -c 'if [ $((JOULEX_ITERATION % 2)) = 0 ]; then sleep 0.05; else sleep 0.15; fi'";
-    /// 10 ms, with a 300 ms run twice in 100 runs. System noise can add a few
-    /// small outliers (the MAD of 10 ms sleeps is tiny), so the count isn't
-    /// asserted, and 100 runs keep all outliers well below the 10% at which
-    /// they would count as a cluster instead.
-    const RARE_OUTLIERS: &str =
-        "sh -c 'if [ $((JOULEX_ITERATION % 50)) = 5 ]; then sleep 0.3; else sleep 0.01; fi'";
 
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
@@ -70,26 +64,6 @@ mod unix {
             .stderr(predicate::str::contains("looks multimodal"))
             // The slower group is a mode, not "outliers"
             .stderr(predicate::str::contains("of the variance").not());
-    }
-
-    #[test]
-    fn rare_huge_outliers_trigger_the_inflated_variance_warning() {
-        // The i686 CI target runs under emulation, which can add enough jitter
-        // to change the outlier classification. The detector has a synthetic
-        // unit test; keep this timing-based integration check on native targets.
-        if cfg!(target_arch = "x86") || common::is_rosetta() {
-            return;
-        }
-        hyperfine()
-            .args(["--runs=100", "-N", RARE_OUTLIERS])
-            .assert()
-            .success()
-            .stderr(
-                predicate::str::is_match(r"\d+% of the variance is caused by \d+ outliers")
-                    .unwrap(),
-            )
-            // Replaces the generic outlier warning
-            .stderr(predicate::str::contains("Statistical outliers were detected").not());
     }
 
     #[test]
