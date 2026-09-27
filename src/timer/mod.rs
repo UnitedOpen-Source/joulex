@@ -36,6 +36,7 @@ use std::sync::{mpsc, Arc};
 #[derive(Debug, Clone)]
 pub struct TimerResult {
     pub time_real: Second,
+    pub time_total: Second,
     pub time_user: Second,
     pub time_system: Second,
     pub memory_usage_byte: u64,
@@ -289,6 +290,127 @@ pub fn read_until(mut out: impl Read, needle: &[u8]) -> std::io::Result<bool> {
     }
 }
 
+/// Fixed 16-byte representation of a monotonic timestamp passed from child to parent over pipe.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChildTimestamp {
+    pub tv_sec: i64,
+    pub tv_nsec: i64,
+}
+
+#[cfg(not(windows))]
+pub fn timespec_diff_seconds(start: &libc::timespec, end: &libc::timespec) -> f64 {
+    let sec_diff = (end.tv_sec as f64) - (start.tv_sec as f64);
+    let nsec_diff = (end.tv_nsec as f64) - (start.tv_nsec as f64);
+    (sec_diff + nsec_diff * 1e-9).max(0.0)
+}
+
+#[cfg(not(windows))]
+pub fn current_monotonic_timespec() -> libc::timespec {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: ts points to a valid libc::timespec struct.
+    let _ = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    ts
+}
+
+#[cfg(not(windows))]
+pub fn read_child_timestamp(fd: libc::c_int) -> std::io::Result<libc::timespec> {
+    let mut payload = ChildTimestamp {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    let buf = &mut payload as *mut ChildTimestamp as *mut u8;
+    let len = std::mem::size_of::<ChildTimestamp>();
+    let mut read_bytes = 0;
+
+    while read_bytes < len {
+        // SAFETY: `fd` is a valid open file descriptor for reading; `buf` is a valid pointer
+        // to `len` bytes in the stack frame.
+        let ret = unsafe {
+            libc::read(
+                fd,
+                buf.add(read_bytes) as *mut libc::c_void,
+                len - read_bytes,
+            )
+        };
+        if ret > 0 {
+            read_bytes += ret as usize;
+        } else if ret == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "unexpected EOF reading child timestamp from pipe",
+            ));
+        } else {
+            let err = std::io::Error::last_os_error();
+            if err.raw_os_error() == Some(libc::EINTR) {
+                continue;
+            }
+            return Err(err);
+        }
+    }
+
+    Ok(libc::timespec {
+        tv_sec: payload.tv_sec as _,
+        tv_nsec: payload.tv_nsec as libc::c_long,
+    })
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[cfg(not(windows))]
+/// Write monotonic timestamp to pipe in pre_exec hook.
+///
+/// # Safety
+///
+/// This function must only invoke async-signal-safe syscalls
+/// (`clock_gettime`, `write`, `close`, errno helper) and must not allocate heap memory.
+pub unsafe fn pre_exec_write_timestamp(raw_write: libc::c_int) -> std::io::Result<()> {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    if libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) != 0 {
+        #[cfg(target_os = "linux")]
+        let err = *libc::__errno_location();
+        #[cfg(not(target_os = "linux"))]
+        let err = *libc::__error();
+        return Err(std::io::Error::from_raw_os_error(err));
+    }
+    #[allow(clippy::unnecessary_cast)]
+    let payload = ChildTimestamp {
+        tv_sec: ts.tv_sec as i64,
+        tv_nsec: ts.tv_nsec as i64,
+    };
+    let buf = &payload as *const ChildTimestamp as *const u8;
+    let len = std::mem::size_of::<ChildTimestamp>();
+    let mut written = 0;
+    while written < len {
+        let ret = libc::write(
+            raw_write,
+            buf.add(written) as *const libc::c_void,
+            len - written,
+        );
+        if ret > 0 {
+            written += ret as usize;
+        } else if ret < 0 {
+            #[cfg(target_os = "linux")]
+            let err = *libc::__errno_location();
+            #[cfg(not(target_os = "linux"))]
+            let err = *libc::__error();
+            if err == libc::EINTR {
+                continue;
+            }
+            return Err(std::io::Error::from_raw_os_error(err));
+        } else {
+            return Err(std::io::Error::from_raw_os_error(libc::EIO));
+        }
+    }
+    libc::close(raw_write);
+    Ok(())
+}
+
 /// Execute the given command and return a timing summary
 pub fn execute_and_measure(
     mut command: Command,
@@ -325,46 +447,44 @@ pub fn execute_and_measure(
         let mut fds = [0i32; 2];
         // SAFETY: fds points to a valid 2-element i32 array.
         let ret = unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) };
-        if ret == 0 {
-            use std::os::fd::AsRawFd;
-            use std::os::unix::process::CommandExt;
-            // SAFETY: fds were created by pipe2 above and are valid open file descriptors.
-            let (read_fd, write_fd) = unsafe {
-                (
-                    std::os::fd::OwnedFd::from_raw_fd(fds[0]),
-                    std::os::fd::OwnedFd::from_raw_fd(fds[1]),
-                )
-            };
-            let raw_write = write_fd.as_raw_fd();
-            // SAFETY: pre_exec closure runs in child process between fork and execve without allocating.
-            unsafe {
-                command.pre_exec(move || {
-                    let _ = raw_write;
-                    Ok(())
-                });
-            }
-            (Some(read_fd), Some(write_fd))
-        } else {
-            (None, None)
+        if ret != 0 {
+            return Err(std::io::Error::last_os_error().into());
         }
+        use std::os::fd::AsRawFd;
+        use std::os::unix::process::CommandExt;
+        // SAFETY: fds were created by pipe2 above and are valid open file descriptors.
+        let (read_fd, write_fd) = unsafe {
+            (
+                std::os::fd::OwnedFd::from_raw_fd(fds[0]),
+                std::os::fd::OwnedFd::from_raw_fd(fds[1]),
+            )
+        };
+        let raw_write = write_fd.as_raw_fd();
+        // SAFETY: pre_exec runs in child process between fork and execve.
+        // It only calls async-signal-safe functions (clock_gettime, write, close)
+        // on data captured by copy without heap allocation.
+        unsafe {
+            command.pre_exec(move || pre_exec_write_timestamp(raw_write));
+        }
+        (read_fd, write_fd)
     };
 
-    #[cfg(not(target_os = "linux"))]
     let wallclock_timer = WallClockTimer::start();
 
     let mut child = command.spawn()?;
 
     #[cfg(target_os = "linux")]
-    let wallclock_timer = {
-        if let (Some(read_fd), Some(write_fd)) = (pipe_read, pipe_write) {
-            use std::os::fd::AsRawFd;
-            drop(write_fd);
-            let mut b = [0u8; 1];
-            // SAFETY: read_fd is a valid file descriptor; b points to a valid 1-byte buffer.
-            let _ = unsafe { libc::read(read_fd.as_raw_fd(), b.as_mut_ptr().cast(), 1) };
-            drop(read_fd);
+    let child_start_ts = {
+        drop(pipe_write);
+        use std::os::fd::AsRawFd;
+        match read_child_timestamp(pipe_read.as_raw_fd()) {
+            Ok(ts) => ts,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error.into());
+            }
         }
-        WallClockTimer::start()
     };
 
     #[cfg(windows)]
@@ -394,8 +514,25 @@ pub fn execute_and_measure(
         }
     });
 
+    #[cfg(target_os = "linux")]
+    let stop_timer = |wallclock: &WallClockTimer| -> (Second, Second) {
+        let total = wallclock.stop();
+        let end_ts = current_monotonic_timespec();
+        (
+            timespec_diff_seconds(&child_start_ts, &end_ts).min(total),
+            total,
+        )
+    };
+
+    #[cfg(not(target_os = "linux"))]
+    let stop_timer = |wallclock: &WallClockTimer| -> (Second, Second) {
+        let elapsed = wallclock.stop();
+        (elapsed, elapsed)
+    };
+
     let until_matched;
     let time_real;
+    let time_total;
     let timed_out;
     let status;
 
@@ -420,7 +557,9 @@ pub fn execute_and_measure(
             false
         };
 
-        time_real = wallclock_timer.stop();
+        let (real, total) = stop_timer(&wallclock_timer);
+        time_real = real;
+        time_total = total;
 
         if matched {
             #[cfg(not(windows))]
@@ -524,7 +663,9 @@ pub fn execute_and_measure(
         #[cfg(windows)]
         let raw_status = child.wait()?;
 
-        time_real = wallclock_timer.stop();
+        let (real, total) = stop_timer(&wallclock_timer);
+        time_real = real;
+        time_total = total;
         timed_out = watchdog.is_some_and(|w| w.disarm());
         status = raw_status;
 
@@ -559,6 +700,7 @@ pub fn execute_and_measure(
 
     Ok(TimerResult {
         time_real,
+        time_total,
         time_user,
         time_system,
         memory_usage_byte,
@@ -653,5 +795,194 @@ mod tests {
             index: 0,
         };
         assert!(read_until(reader, b"READY").unwrap());
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_timespec_diff_seconds() {
+        // Simple 1 second
+        let t1 = libc::timespec {
+            tv_sec: 10,
+            tv_nsec: 0,
+        };
+        let t2 = libc::timespec {
+            tv_sec: 11,
+            tv_nsec: 0,
+        };
+        assert!((timespec_diff_seconds(&t1, &t2) - 1.0).abs() < 1e-9);
+
+        // Nanosecond borrow / wrap-around
+        let t3 = libc::timespec {
+            tv_sec: 10,
+            tv_nsec: 900_000_000,
+        };
+        let t4 = libc::timespec {
+            tv_sec: 11,
+            tv_nsec: 100_000_000,
+        };
+        assert!((timespec_diff_seconds(&t3, &t4) - 0.2).abs() < 1e-9);
+
+        // Sub-millisecond execution (e.g. 500 microseconds)
+        let t5 = libc::timespec {
+            tv_sec: 100,
+            tv_nsec: 100_000,
+        };
+        let t6 = libc::timespec {
+            tv_sec: 100,
+            tv_nsec: 600_000,
+        };
+        assert!((timespec_diff_seconds(&t5, &t6) - 0.0005).abs() < 1e-9);
+
+        // Zero difference
+        assert_eq!(timespec_diff_seconds(&t1, &t1), 0.0);
+
+        // Reverse difference (monotonic clamp)
+        assert_eq!(timespec_diff_seconds(&t2, &t1), 0.0);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_pipe_timestamp_transfer_roundtrip() {
+        let mut fds = [0i32; 2];
+        // SAFETY: fds points to a valid 2-element i32 array.
+        let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+        assert_eq!(ret, 0);
+
+        let read_fd = fds[0];
+        let write_fd = fds[1];
+
+        let before = current_monotonic_timespec();
+        // SAFETY: write_fd is a valid open file descriptor for writing.
+        unsafe {
+            pre_exec_write_timestamp(write_fd).unwrap();
+        }
+
+        let read_ts = read_child_timestamp(read_fd).unwrap();
+        // SAFETY: read_fd is a valid open file descriptor.
+        unsafe {
+            libc::close(read_fd);
+        }
+
+        let diff = timespec_diff_seconds(&before, &read_ts);
+        assert!(diff >= 0.0);
+        assert!(diff < 1.0);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_read_child_timestamp_chunked() {
+        let mut fds = [0i32; 2];
+        // SAFETY: fds points to a valid 2-element i32 array.
+        let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+        assert_eq!(ret, 0);
+
+        let read_fd = fds[0];
+        let write_fd = fds[1];
+
+        let payload = ChildTimestamp {
+            tv_sec: 12345,
+            tv_nsec: 67890,
+        };
+        // SAFETY: payload is a valid ChildTimestamp struct with size and alignment of ChildTimestamp.
+        let bytes = unsafe {
+            std::slice::from_raw_parts(
+                &payload as *const ChildTimestamp as *const u8,
+                std::mem::size_of::<ChildTimestamp>(),
+            )
+        };
+
+        // Write 1 byte at a time to test partial read loop
+        for &b in bytes {
+            // SAFETY: write_fd is a valid file descriptor; &b is a valid 1-byte pointer.
+            let n = unsafe { libc::write(write_fd, &b as *const u8 as *const libc::c_void, 1) };
+            assert_eq!(n, 1);
+        }
+        // SAFETY: write_fd is a valid open file descriptor.
+        unsafe {
+            libc::close(write_fd);
+        }
+
+        let ts = read_child_timestamp(read_fd).unwrap();
+        // SAFETY: read_fd is a valid open file descriptor.
+        unsafe {
+            libc::close(read_fd);
+        }
+
+        assert_eq!(ts.tv_sec, 12345);
+        assert_eq!(ts.tv_nsec, 67890);
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn test_read_child_timestamp_unexpected_eof() {
+        let mut fds = [0i32; 2];
+        // SAFETY: fds points to a valid 2-element i32 array.
+        let ret = unsafe { libc::pipe(fds.as_mut_ptr()) };
+        assert_eq!(ret, 0);
+
+        let read_fd = fds[0];
+        let write_fd = fds[1];
+
+        // Write fewer bytes than a full ChildTimestamp (e.g. 4 bytes instead of 16)
+        let partial = [1u8, 2, 3, 4];
+        // SAFETY: write_fd is valid; partial is a 4-byte slice.
+        let n = unsafe {
+            libc::write(
+                write_fd,
+                partial.as_ptr() as *const libc::c_void,
+                partial.len(),
+            )
+        };
+        assert_eq!(n, 4);
+        // SAFETY: write_fd is a valid open file descriptor.
+        unsafe {
+            libc::close(write_fd);
+        }
+
+        let err = read_child_timestamp(read_fd).unwrap_err();
+        // SAFETY: read_fd is a valid open file descriptor.
+        unsafe {
+            libc::close(read_fd);
+        }
+
+        assert_eq!(err.kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn child_timestamp_excludes_pre_exec_delay() {
+        use std::os::unix::process::CommandExt;
+
+        let mut command = Command::new("true");
+        // SAFETY: nanosleep is async-signal-safe and the closure only uses
+        // stack values between fork and exec.
+        unsafe {
+            command.pre_exec(|| {
+                let delay = libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 80_000_000,
+                };
+                if libc::nanosleep(&delay, std::ptr::null_mut()) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
+        let result = execute_and_measure(
+            command,
+            None,
+            crate::util::priority::Priority::Normal,
+            false,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(result.time_real >= 0.0);
+        assert!(
+            result.time_total - result.time_real >= 0.05,
+            "full time should include the pre-exec delay: {result:?}"
+        );
     }
 }

@@ -437,7 +437,7 @@ impl<'a> BenchmarkRunner<'a> {
     pub fn run_initial_measurement(&mut self) -> Result<()> {
         let preparation_result = self.run_preparation(BenchmarkIteration::Benchmark(0))?;
         let preparation_overhead =
-            preparation_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
+            preparation_result.map_or(0.0, |res| res.time_total + self.executor.time_overhead());
 
         if let Some(sampler) = self.energy_sampler.as_mut() {
             sampler.start();
@@ -459,9 +459,9 @@ impl<'a> BenchmarkRunner<'a> {
 
         let conclusion_result = self.run_conclusion(BenchmarkIteration::Benchmark(0))?;
         let conclusion_overhead =
-            conclusion_result.map_or(0.0, |res| res.time_real + self.executor.time_overhead());
+            conclusion_result.map_or(0.0, |res| res.time_total + self.executor.time_overhead());
 
-        let total_time = res.time_real
+        let total_time = res.time_total
             + self.executor.time_overhead()
             + preparation_overhead
             + conclusion_overhead;

@@ -51,6 +51,9 @@ pub struct TimingResult {
     /// Wall clock time
     pub time_real: Second,
 
+    /// Total wall clock time including process spawn overhead (used for scheduling/ETA)
+    pub time_total: Second,
+
     /// Time spent in user mode
     pub time_user: Second,
 
