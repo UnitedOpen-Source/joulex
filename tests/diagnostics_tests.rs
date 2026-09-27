@@ -34,7 +34,7 @@ mod unix {
     /// asserted, and 100 runs keep all outliers well below the 10% at which
     /// they would count as a cluster instead.
     const RARE_OUTLIERS: &str =
-        "if [ $((JOULEX_ITERATION % 50)) = 5 ]; then sleep 0.3; else sleep 0.01; fi";
+        "sh -c 'if [ $((JOULEX_ITERATION % 50)) = 5 ]; then sleep 0.3; else sleep 0.01; fi'";
 
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
@@ -81,7 +81,7 @@ mod unix {
             return;
         }
         hyperfine()
-            .args(["--runs=100", RARE_OUTLIERS])
+            .args(["--runs=100", "-N", RARE_OUTLIERS])
             .assert()
             .success()
             .stderr(
