@@ -353,7 +353,7 @@ pub fn read_child_timestamp(fd: libc::c_int) -> std::io::Result<libc::timespec> 
     }
 
     Ok(libc::timespec {
-        tv_sec: payload.tv_sec as libc::time_t,
+        tv_sec: payload.tv_sec as _,
         tv_nsec: payload.tv_nsec as libc::c_long,
     })
 }
