@@ -389,3 +389,7 @@ in the sidebar on how to properly cite hyperfine.
 `hyperfine` is dual-licensed under the terms of the MIT License and the Apache License 2.0.
 
 See the [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) files for details.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the local checks and pull request workflow.
