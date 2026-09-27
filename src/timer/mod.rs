@@ -155,6 +155,56 @@ impl TerminateWatcher {
     }
 }
 
+/// Ensure all processes in the process group are terminated safely.
+///
+/// After SIGTERM is delivered and the process group leader exits, descendants that
+/// ignore SIGTERM may still be running. This gives well-behaved processes a brief
+/// grace period to exit cleanly before forcefully killing any surviving descendants
+/// with SIGKILL.
+#[cfg(not(windows))]
+fn terminate_process_group(pid: u32) {
+    if pid <= 1 {
+        return;
+    }
+    let pgid = -(pid as libc::pid_t);
+
+    let is_group_alive = || -> bool {
+        // SAFETY: kill with signal 0 checks for process existence without delivering a signal.
+        let ret = unsafe { libc::kill(pgid, 0) };
+        if ret == 0 {
+            true
+        } else {
+            std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+        }
+    };
+
+    if !is_group_alive() {
+        return;
+    }
+
+    // Give remaining processes that received SIGTERM a short chance to exit cleanly.
+    for _ in 0..10 {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        if !is_group_alive() {
+            return;
+        }
+    }
+
+    // Forcefully kill any remaining processes in the group (e.g. descendants ignoring SIGTERM).
+    // SAFETY: negative pid targets the process group created via command.process_group(0).
+    unsafe {
+        libc::kill(pgid, libc::SIGKILL);
+    }
+
+    // Wait until all processes in the group have exited.
+    for _ in 0..50 {
+        if !is_group_alive() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// The last bytes of a run's stdout and stderr (`--show-output-on-failure`)
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CapturedOutput {
@@ -383,6 +433,7 @@ pub fn execute_and_measure(
                 let fallback = TerminateWatcher::arm(pid, std::time::Duration::from_secs(2));
                 let (raw_status, usage) = self::unix_timer::wait_with_rusage(&child)?;
                 fallback.disarm();
+                terminate_process_group(pid);
                 let _ = raw_status;
                 time_user = usage.user;
                 time_system = usage.system;

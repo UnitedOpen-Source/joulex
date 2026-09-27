@@ -74,7 +74,10 @@ mod unix {
 
     #[test]
     fn rare_huge_outliers_trigger_the_inflated_variance_warning() {
-        if common::is_rosetta() {
+        // The i686 CI target runs under emulation, which can add enough jitter
+        // to change the outlier classification. The detector has a synthetic
+        // unit test; keep this timing-based integration check on native targets.
+        if cfg!(target_arch = "x86") || common::is_rosetta() {
             return;
         }
         hyperfine()
