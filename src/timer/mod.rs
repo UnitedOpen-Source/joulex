@@ -95,12 +95,16 @@ impl Watchdog {
         let (tx, rx) = mpsc::channel::<()>();
         let fired = Arc::new(AtomicBool::new(false));
         let f = fired.clone();
+        let raw_handle = job_handle.0 as usize;
         let handle = std::thread::spawn(move || {
             if rx.recv_timeout(timeout).is_err() {
                 f.store(true, Ordering::SeqCst);
                 // SAFETY: TerminateJobObject terminates all processes associated with the job object.
                 unsafe {
-                    windows_sys::Win32::System::JobObjects::TerminateJobObject(job_handle.0, 1);
+                    windows_sys::Win32::System::JobObjects::TerminateJobObject(
+                        raw_handle as windows_sys::Win32::Foundation::HANDLE,
+                        1,
+                    );
                 }
             }
         });
@@ -324,10 +328,15 @@ pub fn execute_and_measure(
         if ret == 0 {
             use std::os::fd::AsRawFd;
             use std::os::unix::process::CommandExt;
-            // SAFETY: fds were created by pipe2 above.
-            let read_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fds[0]) };
-            let write_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fds[1]) };
+            // SAFETY: fds were created by pipe2 above and are valid open file descriptors.
+            let (read_fd, write_fd) = unsafe {
+                (
+                    std::os::fd::OwnedFd::from_raw_fd(fds[0]),
+                    std::os::fd::OwnedFd::from_raw_fd(fds[1]),
+                )
+            };
             let raw_write = write_fd.as_raw_fd();
+            // SAFETY: pre_exec closure runs in child process between fork and execve without allocating.
             unsafe {
                 command.pre_exec(move || {
                     let _ = raw_write;
