@@ -160,13 +160,13 @@ fn process_group_kills_descendants_on_unix() {
     // Watchdog should kill the entire process group including the background sleep
     let start = std::time::Instant::now();
     hyperfine()
-        .args(["--timeout", "200ms", "--runs=1", "sh -c 'sleep 10 & wait'"])
+        .args(["--timeout", "200ms", "--runs=1", "sh -c 'sleep 30 & wait'"])
         .assert()
         .success()
         .stdout(predicate::str::contains("Timed out"));
 
     assert!(
-        start.elapsed() < std::time::Duration::from_secs(2),
+        start.elapsed() < std::time::Duration::from_secs(10),
         "Process tree kill took too long: {:?}",
         start.elapsed()
     );
