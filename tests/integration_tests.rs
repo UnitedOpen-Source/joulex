@@ -836,13 +836,13 @@ fn can_generate_shell_completions() {
         .arg("--generate-completions=bash")
         .assert()
         .success()
-        .stdout(predicate::str::contains("complete -F _joulex"));
+        .stdout(predicate::str::contains("complete -F _perfratio"));
 
     hyperfine()
         .arg("--generate-completions=zsh")
         .assert()
         .success()
-        .stdout(predicate::str::contains("compdef _joulex joulex"));
+        .stdout(predicate::str::contains("compdef _perfratio perfratio"));
 }
 
 #[test]
@@ -1676,7 +1676,7 @@ fn fish_completions_complete_executables_for_the_command() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "complete -c joulex -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"",
+            "complete -c perfratio -n \"__fish_use_subcommand\" -x -a \"(__fish_complete_command)\"",
         ));
 }
 
@@ -1716,12 +1716,12 @@ fn existing_export_is_kept_when_benchmark_fails() {
 fn export_to_missing_directory_fails_before_benchmarking() {
     hyperfine_debug()
         .arg("--export-json")
-        .arg("/nonexistent-joulex-dir/out.json")
+        .arg("/nonexistent-perfratio-dir/out.json")
         .arg("sleep 0.1")
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "Could not create export file '/nonexistent-joulex-dir/out.json'",
+            "Could not create export file '/nonexistent-perfratio-dir/out.json'",
         ));
 }
 
@@ -1933,7 +1933,7 @@ fn test_ctrlc_interruption_recovers_timing_and_exports() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("interrupted.json");
 
-    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+    let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=50")
         .arg("--shell=none")
         .arg("--export-json")
@@ -1942,7 +1942,7 @@ fn test_ctrlc_interruption_recovers_timing_and_exports() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn joulex");
+        .expect("failed to spawn perfratio");
 
     std::thread::sleep(Duration::from_millis(800));
 
@@ -1993,7 +1993,7 @@ fn test_ctrlc_round_robin_interruption() {
     let tempdir = tempdir().unwrap();
     let export_path = tempdir.path().join("interrupted_rr.json");
 
-    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+    let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=40")
         .arg("--shell=none")
         .arg("--schedule=round-robin")
@@ -2004,7 +2004,7 @@ fn test_ctrlc_round_robin_interruption() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn joulex");
+        .expect("failed to spawn perfratio");
 
     std::thread::sleep(Duration::from_millis(1000));
 
@@ -2043,7 +2043,7 @@ fn test_ctrlc_unbenchmarked_count_with_imported_json() {
         r#"{"results":[{"command":"imported_cmd","mean":1.0,"stddev":0.01,"median":1.0,"user":0.0,"system":0.0,"min":1.0,"max":1.0,"times":[1.0],"exit_codes":[0]}]}"#,
     ).unwrap();
 
-    let child = Command::new(assert_cmd::cargo_bin!("joulex"))
+    let child = Command::new(assert_cmd::cargo_bin!("perfratio"))
         .arg("--runs=50")
         .arg("--shell=none")
         .arg("--import-json")
@@ -2053,7 +2053,7 @@ fn test_ctrlc_unbenchmarked_count_with_imported_json() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn joulex");
+        .expect("failed to spawn perfratio");
 
     std::thread::sleep(Duration::from_millis(500));
 

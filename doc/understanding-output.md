@@ -1,6 +1,6 @@
-# Understanding joulex output
+# Understanding perfratio output
 
-This page explains every field joulex prints, how the numbers are computed, and how to get
+This page explains every field perfratio prints, how the numbers are computed, and how to get
 reliable results. See the [README](../README.md) for installation and basic usage.
 
 - [Anatomy of a benchmark report](#anatomy-of-a-benchmark-report)
@@ -13,7 +13,7 @@ reliable results. See the [README](../README.md) for installation and basic usag
 ## Anatomy of a benchmark report
 
 ```
-$ joulex -N -w 2 -r 20 --deep-stats 'sleep 0.05' 'sleep 0.1'
+$ perfratio -N -w 2 -r 20 --deep-stats 'sleep 0.05' 'sleep 0.1'
 Benchmark 1: sleep 0.05
   Time (mean ± σ):      58.1 ms ±   2.0 ms    [User: 1.2 ms, System: 1.5 ms, CPU: 5%, Peak Memory: 1.0 MB]
   Range (min … median … max):    55.0 ms …  57.8 ms …  62.0 ms    20 runs
@@ -23,7 +23,7 @@ Benchmark 1: sleep 0.05
 
 | Field | Meaning |
 |---|---|
-| `Time (mean ± σ)` | Arithmetic mean of the **wall-clock** time of all timed runs, and the sample **standard deviation** σ of those runs. σ describes the spread of *individual runs*; it is **not** the uncertainty of the mean (that is roughly σ/√n; see the bootstrap CI below). When joulex runs commands through a shell, the calibrated shell start-up time is subtracted. |
+| `Time (mean ± σ)` | Arithmetic mean of the **wall-clock** time of all timed runs, and the sample **standard deviation** σ of those runs. σ describes the spread of *individual runs*; it is **not** the uncertainty of the mean (that is roughly σ/√n; see the bootstrap CI below). When perfratio runs commands through a shell, the calibrated shell start-up time is subtracted. |
 | `Time (abs ≡)` | Shown instead of mean ± σ when only a single run was performed. |
 | `User` / `System` | Mean CPU time per run spent in user mode and in the kernel, **summed over the process and all of its children**. They are CPU-time components and don't need to add up to the wall time (see below). |
 | `CPU` | `(User + System) / mean wall time`. Above 100% means the command used several cores in parallel (e.g. 380% ≈ 3.8 cores busy); well below 100% means the command mostly waited (I/O, sleep, locks, network). |
@@ -32,7 +32,7 @@ Benchmark 1: sleep 0.05
 | `Bootstrap 95% CI` | Only with `--deep-stats`: 95% confidence intervals for the **mean**, the **median** and **σ**, computed by bootstrapping (5,000 resamples). If you repeated the whole benchmark many times, about 95% of such intervals would contain the true value. |
 | `Percentiles` | Only with `--deep-stats`: the 5th, 25th, 75th and 95th percentile of the run times (linear interpolation), the interquartile range `IQR = p75 − p25`, and the geometric mean. p95 shows how bad the slow runs get; the IQR is a spread measure that ignores outliers. The JSON export always contains `percentiles` and `geometric_mean`. |
 | `Resources (mean)` | Only with `--resource-usage` (Unix): mean **voluntary** context switches (the process blocked: I/O, locks, sleep), **involuntary** ones (it was preempted: a busy machine or too many threads), **minor/major page faults** (major = needed disk I/O) and **block I/O operations**. Useful to explain *why* two commands differ. Per-run values are exported as `resources` in JSON. With the default shell the counters include the shell process; use `-N` to exclude it. |
-| `Energy (mean)` / `Power` | Only with `-E/--energy` on Linux with readable RAPL counters: mean energy per run in joules, and average power (energy / mean time) in watts. The counters measure the **whole CPU package**, including idle and background power, not just the benchmarked process. If the counters are unavailable (other operating systems, missing permissions), joulex prints `RAPL unprivileged/unavailable on host`; on most distributions `energy_uj` is root-only since CVE-2020-8694. |
+| `Energy (mean)` / `Power` | Only with `-E/--energy` on Linux with readable RAPL counters: mean energy per run in joules, and average power (energy / mean time) in watts. The counters measure the **whole CPU package**, including idle and background power, not just the benchmarked process. If the counters are unavailable (other operating systems, missing permissions), perfratio prints `RAPL unprivileged/unavailable on host`; on most distributions `energy_uj` is root-only since CVE-2020-8694. |
 
 ### Why can `User + System` be lower or higher than the wall time?
 
@@ -88,10 +88,10 @@ Summary
 | `-C`, `--conclude CMD` (alias `--after`) | after **each** run | no |
 | `-c`, `--cleanup CMD` | once **after all runs** of a benchmark; once for all commands or once per command | no |
 
-`JOULEX_ITERATION` (and `HYPERFINE_ITERATION`) is set to the run index (`0`, `1`, … or
+`PERFRATIO_ITERATION` (alongside `JOULEX_ITERATION` and `HYPERFINE_ITERATION`) is set to the run index (`0`, `1`, … or
 `warmup-0`, …) for the command, `--prepare` and `--conclude`. The same value is available as
 the `{iteration}` placeholder, which also works with `-N`/`--shell=none`, e.g.
-`joulex -N --prepare 'mkdir -p out/{iteration}' 'tool --out out/{iteration} input'`. It is
+`perfratio -N --prepare 'mkdir -p out/{iteration}' 'tool --out out/{iteration} input'`. It is
 not expanded in `--setup`/`--cleanup`, which don't belong to a single run. The complete flow is shown in
 [execution-order.png](execution-order.png).
 
@@ -107,7 +107,7 @@ changes):
 git worktree add ../app-main main
 (cd ../app-main && cargo build --release)
 cargo build --release
-joulex -N -w 3 \
+perfratio -N -w 3 \
   -n main '../app-main/target/release/app input.txt' \
   -n HEAD './target/release/app input.txt'
 ```
@@ -115,7 +115,7 @@ joulex -N -w 3 \
 **Option B: switch and build in `--setup`**, one benchmark per branch:
 
 ```sh
-joulex -L branch main,feature \
+perfratio -L branch main,feature \
   --setup 'git switch {branch} && cargo build --release' \
   './target/release/app input.txt'
 ```
@@ -128,7 +128,7 @@ parametrized `--setup`, because all setups would run before the interleaved runs
 variant would be measured on the last branch built.
 
 To compare against a saved baseline instead, export it once (`--export-json main.json`) and
-later combine it with a live run: `joulex --import-json main.json './target/release/app input.txt'`.
+later combine it with a live run: `perfratio --import-json main.json './target/release/app input.txt'`.
 
 ## Reducing noise
 
@@ -143,7 +143,7 @@ later combine it with a live run: `joulex --import-json main.json './target/rele
    `sudo cpupower frequency-set -g performance`, and optionally disable turbo boost
    (`echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo`).
 6. **Pin to a core** to avoid migrations (especially on hybrid P/E-core CPUs):
-   `joulex --affinity 2 ./app` (Linux and Windows; also accepts lists like `0,2-3`).
+   `perfratio --affinity 2 ./app` (Linux and Windows; also accepts lists like `0,2-3`).
 7. **More runs**: `--min-runs`/`--runs`. The uncertainty of the mean shrinks with √n; use
    `--deep-stats` to see the confidence interval.
 8. **Energy measurements** are the most sensitive to all of the above, because the RAPL

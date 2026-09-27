@@ -6,7 +6,7 @@ use anyhow::{bail, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Priority {
-    /// Inherit joulex's priority (default)
+    /// Inherit perfratio's priority (default)
     #[default]
     Normal,
     /// Linux/macOS: nice -20. Windows: HIGH_PRIORITY_CLASS
@@ -51,12 +51,12 @@ pub fn permission_hint(priority: Priority) -> Option<&'static str> {
     match priority {
         Priority::Normal | Priority::Idle => None,
         Priority::High | Priority::Realtime => Some(if cfg!(target_os = "linux") {
-            "raising the priority requires the CAP_SYS_NICE capability: run joulex as root, \
-             or grant it with 'sudo setcap cap_sys_nice+ep \"$(command -v joulex)\"'"
+            "raising the priority requires the CAP_SYS_NICE capability: run perfratio as root, \
+             or grant it with 'sudo setcap cap_sys_nice+ep \"$(command -v perfratio)\"'"
         } else if cfg!(windows) {
             "without administrator rights, Windows silently lowers 'realtime' to 'high'"
         } else {
-            "raising the priority requires root: run joulex with sudo"
+            "raising the priority requires root: run perfratio with sudo"
         }),
     }
 }

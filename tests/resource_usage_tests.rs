@@ -35,7 +35,7 @@ const MB: u64 = 1024 * 1024;
 const ALLOCATE_100MB: &str = "dd if=/dev/zero of=/dev/null bs=104857600 count=1";
 
 /// Regression test for #46: peak memory used to be the maximum over *all*
-/// processes joulex ever ran, so a small command benchmarked after a big one
+/// processes perfratio ever ran, so a small command benchmarked after a big one
 /// reported the big one's peak.
 #[test]
 fn peak_memory_does_not_leak_between_benchmarks() {

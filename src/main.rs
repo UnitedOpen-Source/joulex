@@ -58,7 +58,7 @@ fn run() -> Result<()> {
     if let Some(shell) = cli_arguments.get_one::<String>("generate-completions") {
         let shell = parse_shell(shell)?;
         let mut command = build_command();
-        clap_complete::generate(shell, &mut command, "joulex", &mut std::io::stdout());
+        clap_complete::generate(shell, &mut command, "perfratio", &mut std::io::stdout());
         if shell == Shell::Fish {
             crate::out!("{}", cli::FISH_COMMAND_COMPLETION);
         }
@@ -109,7 +109,7 @@ fn run() -> Result<()> {
     if options.priority == util::priority::Priority::Realtime {
         eprintln!(
             "{} '--priority realtime': a benchmarked command that never blocks can starve the \
-             rest of the system, including joulex itself.",
+             rest of the system, including perfratio itself.",
             output::colors::yellow("Warning:")
         );
     }

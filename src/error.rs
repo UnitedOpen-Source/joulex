@@ -61,7 +61,7 @@ pub enum OptionsError<'a> {
     StdinDataFileDoesNotExist(String),
     #[error(
         "The '--omit-failed-runs' option requires '--ignore-failure' to be set, otherwise \
-         joulex aborts on the first failed run"
+         perfratio aborts on the first failed run"
     )]
     OmitFailedRunsRequiresIgnoreFailure,
 

@@ -911,14 +911,15 @@ fn test_can_parse_shell_command_line_from_str() {
 #[test]
 fn test_suppress_outlier_warnings_option() {
     let matches = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--suppress-outlier-warnings",
         "echo test",
     ]);
     let options = Options::from_cli_arguments(&matches).unwrap();
     assert!(options.suppress_outlier_warnings);
 
-    let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
+    let matches_default =
+        crate::cli::build_command().get_matches_from(vec!["perfratio", "echo test"]);
     let options_default = Options::from_cli_arguments(&matches_default).unwrap();
     assert!(!options_default.suppress_outlier_warnings);
 }
@@ -926,7 +927,7 @@ fn test_suppress_outlier_warnings_option() {
 #[test]
 fn test_schedule_options() {
     let matches = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--schedule=round-robin",
         "echo test",
     ]);
@@ -934,7 +935,7 @@ fn test_schedule_options() {
     assert_eq!(options.schedule, ScheduleMode::RoundRobin);
 
     let matches_interleaved = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--schedule=interleaved",
         "echo test",
     ]);
@@ -942,15 +943,19 @@ fn test_schedule_options() {
     assert_eq!(options_interleaved.schedule, ScheduleMode::RoundRobin);
 
     assert!(crate::cli::build_command()
-        .try_get_matches_from(vec!["joulex", "--schedule=sequential", "echo test"])
+        .try_get_matches_from(vec!["perfratio", "--schedule=sequential", "echo test"])
         .is_err());
 
-    let matches_flag =
-        crate::cli::build_command().get_matches_from(vec!["joulex", "--round-robin", "echo test"]);
+    let matches_flag = crate::cli::build_command().get_matches_from(vec![
+        "perfratio",
+        "--round-robin",
+        "echo test",
+    ]);
     let options_flag = Options::from_cli_arguments(&matches_flag).unwrap();
     assert_eq!(options_flag.schedule, ScheduleMode::RoundRobin);
 
-    let matches_default = crate::cli::build_command().get_matches_from(vec!["joulex", "echo test"]);
+    let matches_default =
+        crate::cli::build_command().get_matches_from(vec!["perfratio", "echo test"]);
     let options_default = Options::from_cli_arguments(&matches_default).unwrap();
     assert_eq!(options_default.schedule, ScheduleMode::Grouped);
 }
@@ -958,7 +963,7 @@ fn test_schedule_options() {
 #[test]
 fn test_warning_suppression_options() {
     let matches_no_off_cpu = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--no-off-cpu-warning",
         "echo test",
     ]);
@@ -967,7 +972,7 @@ fn test_warning_suppression_options() {
     assert!(!opts.suppress_outlier_warnings);
 
     let matches_outliers = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--suppress-outlier-warnings",
         "echo test",
     ]);
@@ -976,7 +981,7 @@ fn test_warning_suppression_options() {
     assert!(opts.suppress_outlier_warnings);
 
     let matches_suppress_both = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--suppress-warnings=off-cpu,outliers",
         "echo test",
     ]);
@@ -985,7 +990,7 @@ fn test_warning_suppression_options() {
     assert!(opts.suppress_outlier_warnings);
 
     let matches_suppress_all = crate::cli::build_command().get_matches_from(vec![
-        "joulex",
+        "perfratio",
         "--no-warning=all",
         "echo test",
     ]);

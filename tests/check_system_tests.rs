@@ -116,7 +116,8 @@ fn json_export_records_the_environment() {
         .success();
     let json: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&json).unwrap()).unwrap();
-    let system = &json["joulex"]["system"];
+    let system = &json["perfratio"]["system"];
+    assert_eq!(system, &json["joulex"]["system"]);
     assert!(system["cpus"].as_u64().unwrap() >= 1);
     if cfg!(unix) {
         assert!(!system["kernel"].as_str().unwrap().is_empty());

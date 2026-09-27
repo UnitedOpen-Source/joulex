@@ -303,8 +303,8 @@ impl Exporter for HtmlExporter {
         let mut html = format!(
             "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
              <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
-             <title>joulex report</title><style>{STYLE}</style></head><body>\
-             <h1>joulex benchmark report</h1><p class=\"muted\">joulex {}</p>",
+             <title>perfratio report</title><style>{STYLE}</style></head><body>\
+             <h1>perfratio benchmark report</h1><p class=\"muted\">perfratio {}</p>",
             env!("CARGO_PKG_VERSION")
         );
 

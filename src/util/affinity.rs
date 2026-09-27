@@ -56,7 +56,7 @@ pub fn validate(cpus: &[usize]) -> Result<()> {
     Ok(())
 }
 
-/// Number of CPUs configured in the system (not just the ones joulex may use).
+/// Number of CPUs configured in the system (not just the ones perfratio may use).
 fn configured_cpus() -> usize {
     #[cfg(unix)]
     {

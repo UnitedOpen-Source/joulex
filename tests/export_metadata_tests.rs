@@ -33,7 +33,8 @@ fn json_contains_run_metadata_and_labels() {
         "runner=ci",
         "sleep 0.1",
     ]);
-    let meta = &json["joulex"];
+    let meta = &json["perfratio"];
+    assert_eq!(meta, &json["joulex"]);
 
     assert_eq!(meta["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(meta["labels"]["commit"], "abc123");

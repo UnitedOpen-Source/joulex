@@ -1,7 +1,7 @@
 use std::process::Command;
 
 pub fn hyperfine_raw_command() -> Command {
-    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("joulex"));
+    let mut cmd = Command::new(assert_cmd::cargo::cargo_bin!("perfratio"));
     cmd.current_dir("tests/");
     cmd
 }
