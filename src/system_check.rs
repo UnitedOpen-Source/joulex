@@ -486,18 +486,7 @@ fn active_power_plan_windows() -> Option<String> {
                 &mut buf_size,
             );
             if err == 0 {
-                let u16_len = (buf_size as usize) / 2;
-                let u16_slice: &[u16] =
-                    std::slice::from_raw_parts(buf.as_ptr() as *const u16, u16_len);
-                let s = String::from_utf16_lossy(u16_slice)
-                    .trim_matches('\0')
-                    .trim()
-                    .to_string();
-                if !s.is_empty() {
-                    Some(s)
-                } else {
-                    None
-                }
+                decode_utf16le_name(buf.get(..buf_size as usize).unwrap_or(&buf))
             } else {
                 None
             }
@@ -518,6 +507,23 @@ fn active_power_plan_windows() -> Option<String> {
 
         Some(resolved_name)
     }
+}
+
+/// PowerReadFriendlyName returns UTF-16LE bytes in a byte buffer.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn decode_utf16le_name(bytes: &[u8]) -> Option<String> {
+    let units: Vec<u16> = bytes
+        .chunks(2)
+        .filter_map(|pair| match pair {
+            [low, high] => Some(u16::from_le_bytes([*low, *high])),
+            _ => None,
+        })
+        .collect();
+    let name = String::from_utf16_lossy(&units)
+        .trim_matches('\0')
+        .trim()
+        .to_string();
+    (!name.is_empty()).then_some(name)
 }
 
 /// Windows power status check: AC line status (0 = offline/battery, 1 = online/AC, 255 = unknown)
@@ -752,6 +758,15 @@ mod tests {
         let saver = power_plan_check("Power saver");
         assert_eq!(saver.status, Status::Warn);
         assert_eq!(saver.detail, "Power saver");
+    }
+
+    #[test]
+    fn windows_power_plan_name_decodes_utf16le_bytes() {
+        assert_eq!(
+            decode_utf16le_name(&[b'P', 0, b'l', 0, b'a', 0, b'n', 0, 0, 0]),
+            Some("Plan".to_string())
+        );
+        assert_eq!(decode_utf16le_name(&[0, 0]), None);
     }
 
     #[test]
