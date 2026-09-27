@@ -96,7 +96,9 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
         Priority::High => check(unsafe { libc::setpriority(libc::PRIO_PROCESS as _, 0, -20) }),
         #[cfg(target_os = "linux")]
         Priority::Idle => {
-            let param = libc::sched_param { sched_priority: 0 };
+            // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
+            let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
+            param.sched_priority = 0;
             // SAFETY: plain syscall on the calling process; `param` is valid.
             check(unsafe { libc::sched_setscheduler(0, libc::SCHED_IDLE, &param) })
         }
@@ -107,9 +109,9 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
         Priority::Realtime => {
             // SAFETY: plain syscall without side effects.
             let max = unsafe { libc::sched_get_priority_max(libc::SCHED_FIFO) };
-            let param = libc::sched_param {
-                sched_priority: max,
-            };
+            // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
+            let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
+            param.sched_priority = max;
             // SAFETY: plain syscall on the calling process; `param` is valid.
             check(unsafe { libc::sched_setscheduler(0, libc::SCHED_FIFO, &param) })
         }
