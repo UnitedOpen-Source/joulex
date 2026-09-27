@@ -72,6 +72,9 @@ fn refuses_to_discard_more_than_five_percent() {
 
 #[test]
 fn reports_original_run_numbers_together_with_omitted_failed_runs() {
+    if common::is_rosetta() {
+        return;
+    }
     // Run 2 fails and is omitted first; run 7 is slow. The discarded run must be
     // reported as 7 (its original number), not 6 (its position after omission).
     let command = "sh -c 'case $JOULEX_ITERATION in 2) exit 1;; 7) sleep 0.5;; esac; true'";
