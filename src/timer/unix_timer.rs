@@ -136,9 +136,14 @@ mod tests {
         let (_, small_usage) = wait_with_rusage(&small).unwrap();
 
         assert!(big_usage.max_rss_byte > 90 * 1024 * 1024, "{big_usage:?}");
+        // In emulated environments (such as QEMU in cross containers), the emulator runtime alone
+        // can consume 100-200MB RSS. We assert that the small command either has low RSS (< 50MB)
+        // or did not inherit the ~100MB buffer allocated by the big command (differing by at least 40MB).
         assert!(
-            small_usage.max_rss_byte < 50 * 1024 * 1024,
-            "{small_usage:?}"
+            small_usage.max_rss_byte < 50 * 1024 * 1024
+                || (big_usage.max_rss_byte > small_usage.max_rss_byte
+                    && big_usage.max_rss_byte - small_usage.max_rss_byte >= 40 * 1024 * 1024),
+            "small: {small_usage:?}, big: {big_usage:?}"
         );
     }
 }

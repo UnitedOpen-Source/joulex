@@ -109,6 +109,9 @@ insta = { version = "1.41.1", features = ["yaml"] }
 predicates = "3.1"
 tempfile = "3.23"
 
+[target.'cfg(not(windows))'.dev-dependencies]
+libc = "0.2"
+
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
