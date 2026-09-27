@@ -99,8 +99,19 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
             // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
             let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
             param.sched_priority = 0;
-            // SAFETY: plain syscall on the calling process; `param` is valid.
-            check(unsafe { libc::sched_setscheduler(0, libc::SCHED_IDLE, &param) })
+            // NOTE: musl libc's sched_setscheduler wrapper intentionally returns ENOSYS (os error 38)
+            // due to POSIX conformance (POSIX specifies process scheduling, while Linux implements
+            // thread scheduling). Calling the Linux syscall directly works on both glibc and musl.
+            // SAFETY: SYS_sched_setscheduler is a standard Linux syscall on pid 0 (calling process).
+            let ret = unsafe {
+                libc::syscall(
+                    libc::SYS_sched_setscheduler,
+                    0 as libc::pid_t,
+                    libc::SCHED_IDLE as libc::c_int,
+                    &param,
+                )
+            };
+            check(ret as libc::c_int)
         }
         #[cfg(not(target_os = "linux"))]
         // SAFETY: plain syscall on the calling (child) process.
@@ -112,8 +123,16 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
             // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
             let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
             param.sched_priority = max;
-            // SAFETY: plain syscall on the calling process; `param` is valid.
-            check(unsafe { libc::sched_setscheduler(0, libc::SCHED_FIFO, &param) })
+            // SAFETY: SYS_sched_setscheduler is a standard Linux syscall on pid 0 (calling process).
+            let ret = unsafe {
+                libc::syscall(
+                    libc::SYS_sched_setscheduler,
+                    0 as libc::pid_t,
+                    libc::SCHED_FIFO as libc::c_int,
+                    &param,
+                )
+            };
+            check(ret as libc::c_int)
         }
         // Rejected by `Priority::parse` on other Unix systems
         #[cfg(not(target_os = "linux"))]

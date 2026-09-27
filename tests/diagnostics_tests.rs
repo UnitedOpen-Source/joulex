@@ -36,8 +36,35 @@ mod unix {
     const RARE_OUTLIERS: &str =
         "if [ $((JOULEX_ITERATION % 50)) = 5 ]; then sleep 0.3; else sleep 0.01; fi";
 
+    #[allow(dead_code)]
+    fn is_rosetta() -> bool {
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        {
+            let mut ret: libc::c_int = 0;
+            let mut size = std::mem::size_of::<libc::c_int>();
+            let name = std::ffi::CString::new("sysctl.proc_translated").unwrap();
+            // SAFETY: sysctlbyname is a standard safe Darwin API.
+            let res = unsafe {
+                libc::sysctlbyname(
+                    name.as_ptr(),
+                    &mut ret as *mut _ as *mut libc::c_void,
+                    &mut size,
+                    std::ptr::null_mut(),
+                    0,
+                )
+            };
+            if res == 0 && ret == 1 {
+                return true;
+            }
+        }
+        false
+    }
+
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
+        if is_rosetta() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let json = dir.path().join("out.json");
         hyperfine()
@@ -57,6 +84,9 @@ mod unix {
 
     #[test]
     fn two_groups_trigger_the_multimodal_warning() {
+        if is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=40", "-N", "--first-run=discard", TWO_GROUPS])
             .assert()
@@ -68,6 +98,9 @@ mod unix {
 
     #[test]
     fn rare_huge_outliers_trigger_the_inflated_variance_warning() {
+        if is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=100", RARE_OUTLIERS])
             .assert()
@@ -82,6 +115,9 @@ mod unix {
 
     #[test]
     fn diagnostic_warnings_can_be_suppressed() {
+        if is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=30", "-N", "--suppress-outlier-warnings", RAMP])
             .assert()
