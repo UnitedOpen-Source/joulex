@@ -28,6 +28,9 @@ fn slow_in(iterations: &str) -> String {
 
 #[test]
 fn discards_a_single_outlier() {
+    if common::is_rosetta() {
+        return;
+    }
     let result = run_json(&["-N", "--runs=20", "--discard-outliers=100", &slow_in("7")]);
 
     assert_eq!(result["discarded_outliers"], serde_json::json!([7]));
@@ -38,6 +41,9 @@ fn discards_a_single_outlier() {
 
 #[test]
 fn prints_the_number_of_discarded_outliers() {
+    if common::is_rosetta() {
+        return;
+    }
     hyperfine()
         .args([
             "-N",
