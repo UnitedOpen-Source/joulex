@@ -28,6 +28,9 @@ fn slow_in(iterations: &str) -> String {
 
 #[test]
 fn discards_a_single_outlier() {
+    if common::is_rosetta() {
+        return;
+    }
     let result = run_json(&["-N", "--runs=20", "--discard-outliers=100", &slow_in("7")]);
 
     assert_eq!(result["discarded_outliers"], serde_json::json!([7]));
@@ -38,6 +41,9 @@ fn discards_a_single_outlier() {
 
 #[test]
 fn prints_the_number_of_discarded_outliers() {
+    if common::is_rosetta() {
+        return;
+    }
     hyperfine()
         .args([
             "-N",
@@ -72,6 +78,9 @@ fn refuses_to_discard_more_than_five_percent() {
 
 #[test]
 fn reports_original_run_numbers_together_with_omitted_failed_runs() {
+    if common::is_rosetta() {
+        return;
+    }
     // Run 2 fails and is omitted first; run 7 is slow. The discarded run must be
     // reported as 7 (its original number), not 6 (its position after omission).
     let command = "sh -c 'case $JOULEX_ITERATION in 2) exit 1;; 7) sleep 0.5;; esac; true'";

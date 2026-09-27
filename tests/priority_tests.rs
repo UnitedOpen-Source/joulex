@@ -54,9 +54,16 @@ mod unix {
     #[test]
     fn default_priority_is_unchanged() {
         let expected = if cfg!(target_os = "linux") {
-            "policy=0" // SCHED_OTHER
+            "policy=0".to_string() // SCHED_OTHER
         } else {
-            "nice=0"
+            // CI runners can start the test process with a nonzero nice value.
+            let pid = std::process::id().to_string();
+            let output = std::process::Command::new("ps")
+                .args(["-o", "nice=", "-p", &pid])
+                .output()
+                .expect("query parent nice value");
+            assert!(output.status.success());
+            format!("nice={}", String::from_utf8_lossy(&output.stdout).trim())
         };
         hyperfine()
             .args(["--runs=1", "--show-output", probe()])
