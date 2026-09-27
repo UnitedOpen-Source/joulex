@@ -402,6 +402,7 @@ impl Executor for RawExecutor<'_> {
         Ok((
             TimingResult {
                 time_real: result.time_real,
+                time_total: result.time_total,
                 time_user: result.time_user,
                 time_system: result.time_system,
                 memory_usage_byte: result.memory_usage_byte,
@@ -494,6 +495,7 @@ impl Executor for ShellExecutor<'_> {
         // Subtract shell spawning time
         if let Some(ref spawning_time) = self.shell_spawning_time {
             result.time_real = (result.time_real - spawning_time.time_real).max(0.0);
+            result.time_total = (result.time_total - spawning_time.time_total).max(0.0);
             result.time_user = (result.time_user - spawning_time.time_user).max(0.0);
             result.time_system = (result.time_system - spawning_time.time_system).max(0.0);
         }
@@ -501,6 +503,7 @@ impl Executor for ShellExecutor<'_> {
         Ok((
             TimingResult {
                 time_real: result.time_real,
+                time_total: result.time_total,
                 time_user: result.time_user,
                 time_system: result.time_system,
                 memory_usage_byte: result.memory_usage_byte,
@@ -570,6 +573,7 @@ impl Executor for ShellExecutor<'_> {
 
         self.shell_spawning_time = Some(TimingResult {
             time_real: mean(&times_real),
+            time_total: mean(&times_real),
             time_user: mean(&times_user),
             time_system: mean(&times_system),
             memory_usage_byte: 0,
@@ -654,6 +658,7 @@ impl Executor for MockExecutor {
         Ok((
             TimingResult {
                 time_real,
+                time_total: time_real,
                 time_user: 0.0,
                 time_system: 0.0,
                 memory_usage_byte: 0,
