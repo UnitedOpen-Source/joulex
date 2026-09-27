@@ -465,6 +465,36 @@ pub fn build_command() -> Command {
                 .help("Perform deep statistical analysis (bootstrapped confidence intervals for mean, median, and stddev, plus hypothesis testing)."),
         )
         .arg(
+            Arg::new("metric")
+                .long("metric")
+                .action(ArgAction::Set)
+                .value_name("METRIC")
+                .value_parser([
+                    "wall",
+                    "wall-clock",
+                    "time",
+                    "cpu",
+                    "total-cpu",
+                    "user",
+                    "system",
+                    "energy",
+                    "memory",
+                    "rss",
+                    "peak-memory",
+                ])
+                .default_value("wall")
+                .hide_default_value(true)
+                .help(
+                    "Primary metric used for statistics, outlier detection, comparison, and sorting:\n  \
+                       * 'wall' (default, aliases: 'wall-clock', 'time'): wall-clock time\n  \
+                       * 'cpu' (alias: 'total-cpu'): total CPU time (user + system)\n  \
+                       * 'user': user CPU time\n  \
+                       * 'system': system / kernel CPU time\n  \
+                       * 'energy': energy consumed in Joules (auto-enables '--energy')\n  \
+                       * 'memory' (aliases: 'rss', 'peak-memory'): peak resident set size (RSS)\n"
+                ),
+        )
+        .arg(
             Arg::new("sort")
             .long("sort")
             .short('t')

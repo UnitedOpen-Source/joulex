@@ -96,9 +96,22 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
         Priority::High => check(unsafe { libc::setpriority(libc::PRIO_PROCESS as _, 0, -20) }),
         #[cfg(target_os = "linux")]
         Priority::Idle => {
-            let param = libc::sched_param { sched_priority: 0 };
-            // SAFETY: plain syscall on the calling process; `param` is valid.
-            check(unsafe { libc::sched_setscheduler(0, libc::SCHED_IDLE, &param) })
+            // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
+            let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
+            param.sched_priority = 0;
+            // NOTE: musl libc's sched_setscheduler wrapper intentionally returns ENOSYS (os error 38)
+            // due to POSIX conformance (POSIX specifies process scheduling, while Linux implements
+            // thread scheduling). Calling the Linux syscall directly works on both glibc and musl.
+            // SAFETY: SYS_sched_setscheduler is a standard Linux syscall on pid 0 (calling process).
+            let ret = unsafe {
+                libc::syscall(
+                    libc::SYS_sched_setscheduler,
+                    0 as libc::pid_t,
+                    libc::SCHED_IDLE as libc::c_int,
+                    &param,
+                )
+            };
+            check(ret as libc::c_int)
         }
         #[cfg(not(target_os = "linux"))]
         // SAFETY: plain syscall on the calling (child) process.
@@ -107,11 +120,19 @@ fn set_current_process_priority(priority: Priority) -> std::io::Result<()> {
         Priority::Realtime => {
             // SAFETY: plain syscall without side effects.
             let max = unsafe { libc::sched_get_priority_max(libc::SCHED_FIFO) };
-            let param = libc::sched_param {
-                sched_priority: max,
+            // SAFETY: zeroed sched_param struct is valid across all libcs (glibc, musl).
+            let mut param: libc::sched_param = unsafe { std::mem::zeroed() };
+            param.sched_priority = max;
+            // SAFETY: SYS_sched_setscheduler is a standard Linux syscall on pid 0 (calling process).
+            let ret = unsafe {
+                libc::syscall(
+                    libc::SYS_sched_setscheduler,
+                    0 as libc::pid_t,
+                    libc::SCHED_FIFO as libc::c_int,
+                    &param,
+                )
             };
-            // SAFETY: plain syscall on the calling process; `param` is valid.
-            check(unsafe { libc::sched_setscheduler(0, libc::SCHED_FIFO, &param) })
+            check(ret as libc::c_int)
         }
         // Rejected by `Priority::parse` on other Unix systems
         #[cfg(not(target_os = "linux"))]

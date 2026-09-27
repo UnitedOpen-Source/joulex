@@ -25,6 +25,7 @@ use self::orgmode::OrgmodeExporter;
 use self::runs::RunsExporter;
 
 use crate::benchmark::benchmark_result::BenchmarkResult;
+use crate::metric::Metric;
 use crate::options::SortOrder;
 use crate::util::units::Unit;
 
@@ -71,6 +72,7 @@ trait Exporter {
         reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Vec<u8>>;
 }
 
@@ -89,6 +91,7 @@ pub struct ExportManager {
     exporters: Vec<ExporterWithTarget>,
     time_unit: Option<Unit>,
     sort_order: SortOrder,
+    metric: Metric,
     /// Run metadata for the JSON and CSV exports
     metadata: ExportMetadata,
 }
@@ -100,6 +103,7 @@ impl ExportManager {
         matches: &ArgMatches,
         time_unit: Option<Unit>,
         sort_order: SortOrder,
+        metric: Metric,
     ) -> Result<Self> {
         let labels = parse_labels(
             matches
@@ -112,6 +116,7 @@ impl ExportManager {
             exporters: vec![],
             time_unit,
             sort_order,
+            metric,
             metadata: ExportMetadata::new(labels),
         };
 
@@ -193,8 +198,13 @@ impl ExportManager {
     ) -> Result<()> {
         for e in &self.exporters {
             let content = || {
-                e.exporter
-                    .serialize(results, reference, self.time_unit, self.sort_order)
+                e.exporter.serialize(
+                    results,
+                    reference,
+                    self.time_unit,
+                    self.sort_order,
+                    self.metric,
+                )
             };
 
             match e.target {

@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 
 use crate::command::{Command, Commands};
 use crate::export::ExportManager;
+use crate::metric::Metric;
 use crate::options::{ExecutorKind, Options, OutputStyleOption, ScheduleMode, SortOrder};
 use crate::output::colors;
 use crate::output::format::{format_duration, format_duration_unit};
@@ -477,11 +478,12 @@ impl<'a> Scheduler<'a> {
 
         let results_slice: Vec<_> = results.iter().map(|(_, r)| (*r).clone()).collect();
 
+        let metric = self.options.metric;
         // Use the `--reference` command's result if it is still present,
-        // otherwise (no reference, or it was filtered out) the fastest one.
+        // otherwise (no reference, or it was filtered out) the best one according to the active metric.
         let reference = self
             .get_reference_result(&results_slice)
-            .unwrap_or_else(|| relative_speed::fastest_of(&results_slice));
+            .unwrap_or_else(|| relative_speed::best_of(&results_slice, metric));
 
         let interrupted = crate::util::interrupt::interrupted();
         let total_live_commands =
@@ -508,6 +510,7 @@ impl<'a> Scheduler<'a> {
             &results_slice,
             reference,
             self.options.sort_order_speed_comparison,
+            metric,
         ) {
             match self.options.sort_order_speed_comparison {
                 SortOrder::MeanTime => {
@@ -519,8 +522,9 @@ impl<'a> Scheduler<'a> {
                     };
                     let others = annotated_results.iter().filter(|r| !r.is_reference);
 
+                    let verb = metric.verb();
                     crate::outln!(
-                        "  {} ran",
+                        "  {} {verb}",
                         colors::cyan(&reference.result.command_with_unused_parameters)
                     );
 
@@ -550,22 +554,33 @@ impl<'a> Scheduler<'a> {
                         } else {
                             "".into()
                         };
+                        let (better_word, worse_word) = metric.comparison_words();
                         let comparator = match item.relative_ordering {
                             Ordering::Less => format!(
-                                "{}{} times slower than",
+                                "{}{} times {worse_word} than",
                                 colors::green(format!("{:8.2}", item.relative_speed)).bold(),
                                 stddev
                             ),
                             Ordering::Greater => format!(
-                                "{}{} times faster than",
+                                "{}{} times {better_word} than",
                                 colors::green(format!("{:8.2}", item.relative_speed)).bold(),
                                 stddev
                             ),
-                            Ordering::Equal => format!(
-                                "    As fast ({}{}) as",
-                                colors::green(format!("{:.2}", item.relative_speed)).bold(),
-                                stddev
-                            ),
+                            Ordering::Equal => {
+                                let ratio_str =
+                                    colors::green(format!("{:.2}", item.relative_speed)).bold();
+                                match metric {
+                                    Metric::Wall | Metric::Cpu | Metric::User | Metric::System => {
+                                        format!("    As fast ({ratio_str}{stddev}) as")
+                                    }
+                                    Metric::Energy => {
+                                        format!("    the same energy ({ratio_str}{stddev}) as")
+                                    }
+                                    Metric::Memory => {
+                                        format!("    the same memory ({ratio_str}{stddev}) as")
+                                    }
+                                }
+                            }
                         };
                         crate::outln!(
                             "{} {} {}",
@@ -704,10 +719,12 @@ impl<'a> Scheduler<'a> {
                                 format!("  {}", "(reference)".dimmed())
                             } else {
                                 let ref_cmd = reference_command.unwrap();
+                                let (better_word, worse_word) = metric.comparison_words();
+                                let equal_word = metric.equal_word();
                                 let desc = match item.relative_ordering {
-                                    Ordering::Less => format!("faster than {ref_cmd}"),
-                                    Ordering::Greater => format!("slower than {ref_cmd}"),
-                                    Ordering::Equal => format!("as fast as {ref_cmd}"),
+                                    Ordering::Less => format!("{better_word} than {ref_cmd}"),
+                                    Ordering::Greater => format!("{worse_word} than {ref_cmd}"),
+                                    Ordering::Equal => format!("{equal_word} {ref_cmd}"),
                                 };
                                 format!("  {desc}")
                             }
@@ -772,6 +789,7 @@ fn generate_results(args: &[&'static str]) -> Result<Vec<BenchmarkResult>> {
         &cli_arguments,
         options.time_unit,
         options.sort_order_exports,
+        options.metric,
     )?;
 
     options.validate_against_command_list(&commands)?;

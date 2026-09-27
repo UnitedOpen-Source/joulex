@@ -38,6 +38,9 @@ mod unix {
 
     #[test]
     fn a_ramp_triggers_the_trend_warning_and_is_exported() {
+        if common::is_rosetta() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let json = dir.path().join("out.json");
         hyperfine()
@@ -57,6 +60,9 @@ mod unix {
 
     #[test]
     fn two_groups_trigger_the_multimodal_warning() {
+        if common::is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=40", "-N", "--first-run=discard", TWO_GROUPS])
             .assert()
@@ -68,6 +74,9 @@ mod unix {
 
     #[test]
     fn rare_huge_outliers_trigger_the_inflated_variance_warning() {
+        if common::is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=100", RARE_OUTLIERS])
             .assert()
@@ -82,6 +91,9 @@ mod unix {
 
     #[test]
     fn diagnostic_warnings_can_be_suppressed() {
+        if common::is_rosetta() {
+            return;
+        }
         hyperfine()
             .args(["--runs=30", "-N", "--suppress-outlier-warnings", RAMP])
             .assert()

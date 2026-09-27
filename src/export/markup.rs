@@ -143,15 +143,16 @@ impl<T: MarkupExporter> Exporter for T {
         reference: Option<&BenchmarkResult>,
         unit: Option<Unit>,
         sort_order: SortOrder,
+        metric: crate::metric::Metric,
     ) -> Result<Vec<u8>> {
         let unit = unit.unwrap_or_else(|| determine_unit_from_results(results));
         let entries = if results.is_empty() {
             Vec::new()
         } else {
-            let baseline = reference.unwrap_or_else(|| relative_speed::fastest_of(results));
-            relative_speed::compute_with_check_from_reference(results, baseline, sort_order)
+            let baseline = reference.unwrap_or_else(|| relative_speed::best_of(results, metric));
+            relative_speed::compute_with_check_from_reference(results, baseline, sort_order, metric)
                 .unwrap_or_else(|| {
-                    relative_speed::compute_without_ratios(results, baseline, sort_order)
+                    relative_speed::compute_without_ratios(results, baseline, sort_order, metric)
                 })
         };
 

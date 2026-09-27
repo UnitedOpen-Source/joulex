@@ -605,19 +605,65 @@ impl MockExecutor {
     }
 
     /// `--debug-mode` doesn't run anything: it only understands commands of
-    /// the form `sleep <seconds>` and reports exactly that time.
-    fn extract_time<S: AsRef<str>>(sleep_command: S) -> Result<Second> {
+    /// the form `sleep <seconds> [user] [system] [memory]` and reports those measurements.
+    fn extract_measurements<S: AsRef<str>>(
+        sleep_command: S,
+    ) -> Result<(Second, Second, Second, u64)> {
         let command = sleep_command.as_ref();
-        command
-            .strip_prefix("sleep ")
-            .and_then(|seconds| seconds.trim().parse::<Second>().ok())
-            .filter(|seconds| seconds.is_finite() && *seconds >= 0.0)
+        let parts: Vec<&str> = command.split_whitespace().collect();
+        if parts.is_empty() || parts[0] != "sleep" {
+            bail!(
+                "'--debug-mode' only simulates commands of the form 'sleep <seconds>', \
+                 got '{command}'"
+            );
+        }
+        if parts.len() < 2 {
+            bail!("'--debug-mode' requires sleep duration, got '{command}'");
+        }
+        let requested = parts[1]
+            .parse::<Second>()
+            .ok()
+            .filter(|s| s.is_finite() && *s >= 0.0)
             .ok_or_else(|| {
                 anyhow!(
                     "'--debug-mode' only simulates commands of the form 'sleep <seconds>', \
                      got '{command}'"
                 )
-            })
+            })?;
+
+        let time_user = if parts.len() > 2 {
+            parts[2]
+                .parse::<Second>()
+                .ok()
+                .filter(|s| s.is_finite() && *s >= 0.0)
+                .ok_or_else(|| anyhow!("Invalid user time in '{command}'"))?
+        } else {
+            0.0
+        };
+
+        let time_system = if parts.len() > 3 {
+            parts[3]
+                .parse::<Second>()
+                .ok()
+                .filter(|s| s.is_finite() && *s >= 0.0)
+                .ok_or_else(|| anyhow!("Invalid system time in '{command}'"))?
+        } else {
+            0.0
+        };
+
+        let memory_usage_byte = if parts.len() > 4 {
+            parts[4]
+                .parse::<u64>()
+                .map_err(|_| anyhow!("Invalid memory bytes in '{command}'"))?
+        } else {
+            0
+        };
+
+        Ok((requested, time_user, time_system, memory_usage_byte))
+    }
+
+    fn extract_time<S: AsRef<str>>(sleep_command: S) -> Result<Second> {
+        Self::extract_measurements(sleep_command).map(|m| m.0)
     }
 }
 
@@ -642,7 +688,8 @@ impl Executor for MockExecutor {
             ExitStatus::from_raw(0)
         };
 
-        let requested = Self::extract_time(command.get_command_line())?;
+        let (requested, time_user, time_system, memory_usage_byte) =
+            Self::extract_measurements(command.get_command_line())?;
         let timed_out = self.timeout.is_some_and(|t| requested > t.as_secs_f64());
         let time_real = if timed_out {
             self.timeout.unwrap().as_secs_f64()
@@ -653,9 +700,9 @@ impl Executor for MockExecutor {
         Ok((
             TimingResult {
                 time_real,
-                time_user: 0.0,
-                time_system: 0.0,
-                memory_usage_byte: 0,
+                time_user,
+                time_system,
+                memory_usage_byte,
                 energy_joules: None,
                 counters: None,
                 timed_out,
