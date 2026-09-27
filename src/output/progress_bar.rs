@@ -20,10 +20,7 @@ pub const INITIAL_MEASUREMENT_TEMPLATE: &str = " {spinner} {msg} {elapsed_precis
 
 /// Format a progress bar template containing the given message template.
 pub fn create_progress_template(msg_template: &str) -> String {
-    format!(
-        " {{spinner}} {} {{wide_bar}} {{pos}}/{{len}} ETA {{joulex_eta}} ",
-        msg_template
-    )
+    format!(" {{spinner}} {msg_template} {{wide_bar}} {{pos}}/{{len}} ETA {{joulex_eta}} ")
 }
 
 /// Replace the usual `message` in a progress bar with the result of evaluating `template`.
