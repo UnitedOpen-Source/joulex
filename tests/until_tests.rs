@@ -152,4 +152,62 @@ mod unix {
             start.elapsed()
         );
     }
+
+    #[test]
+    fn until_kills_orphan_descendant_ignoring_sigterm() {
+        use std::io::Write;
+
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = dir.path().join("child.pid");
+        let ready_file = dir.path().join("child.ready");
+        let survived_file = dir.path().join("child.survived");
+        let script_file = dir.path().join("test_orphan.sh");
+
+        let mut f = std::fs::File::create(&script_file).unwrap();
+        writeln!(
+            f,
+            "#!/bin/sh\n(trap '' TERM; echo ready > \"$2\"; sleep 1; echo survived > \"$3\"; sleep 30) &\necho $! > \"$1\"\nwhile [ ! -f \"$2\" ]; do sleep 0.01; done\necho READY\nexit 0"
+        )
+        .unwrap();
+        drop(f);
+
+        let script_cmd = format!(
+            "sh {} {} {} {}",
+            script_file.to_str().unwrap(),
+            pid_file.to_str().unwrap(),
+            ready_file.to_str().unwrap(),
+            survived_file.to_str().unwrap()
+        );
+
+        let start = std::time::Instant::now();
+        hyperfine()
+            .args(["--until", "READY", "-N", "-r", "1", &script_cmd])
+            .assert()
+            .success();
+
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(3),
+            "Benchmark took too long: {:?}",
+            start.elapsed()
+        );
+
+        let child_pid_str =
+            std::fs::read_to_string(&pid_file).expect("child pid file should have been written");
+        let child_pid: libc::pid_t = child_pid_str.trim().parse().expect("valid child pid");
+
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+
+        let res = unsafe { libc::kill(child_pid, 0) };
+        let is_alive =
+            res == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH);
+        if is_alive {
+            unsafe {
+                libc::kill(child_pid, libc::SIGKILL);
+            }
+        }
+        assert!(
+            !survived_file.exists(),
+            "Descendant process {child_pid} continued running after --until returned"
+        );
+    }
 }
